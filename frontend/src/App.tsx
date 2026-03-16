@@ -5,6 +5,7 @@
  * illustrated stories bridging languages and cultures.
  */
 
+import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
 
 /* ------------------------------------------------------------------ */
@@ -130,7 +131,7 @@ async function submitChoice(
 /*  Components                                                         */
 /* ------------------------------------------------------------------ */
 
-function Header(): JSX.Element {
+function Header(): ReactNode {
   return (
     <header className="app-header">
       <h1 className="app-title">StoryBridge</h1>
@@ -151,7 +152,7 @@ function SetupForm({
     cultural_elements: string;
     story_seed: string;
   }) => void;
-}): JSX.Element {
+}): ReactNode {
   const [language, setLanguage] = useState(LANGUAGES[0]!);
   const [age, setAge] = useState(5);
   const [theme, setTheme] = useState(THEMES[0]!);
@@ -262,7 +263,7 @@ function SetupForm({
   );
 }
 
-function LoadingScreen({ message }: { message: string }): JSX.Element {
+function LoadingScreen({ message }: { message: string }): ReactNode {
   return (
     <div className="loading-container">
       <div className="loading-spinner" />
@@ -289,7 +290,7 @@ function SceneView({
   isLoadingImage: boolean;
   isLoadingAudio: boolean;
   onChoice: (choice: string) => void;
-}): JSX.Element {
+}): ReactNode {
   const [choice, setChoice] = useState("");
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -437,7 +438,7 @@ function StoryComplete({
 }: {
   story: Story;
   onRestart: () => void;
-}): JSX.Element {
+}): ReactNode {
   return (
     <div className="completion-container">
       <h2 className="completion-title">The End</h2>
@@ -463,7 +464,7 @@ function StoryComplete({
 /*  Main App                                                           */
 /* ------------------------------------------------------------------ */
 
-export function App(): JSX.Element {
+export function App(): ReactNode {
   const [phase, setPhase] = useState<AppPhase>("setup");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [story, setStory] = useState<Story | null>(null);
