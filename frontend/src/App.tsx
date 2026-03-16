@@ -712,12 +712,38 @@ function SceneView({
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // Stop any playing audio and reset state when scene changes
+  // This prevents stale audio from a previous scene playing on the new scene
+  const prevAudioRef = useRef<string | null>(null);
+  if (audioBase64 !== prevAudioRef.current) {
+    prevAudioRef.current = audioBase64;
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    // Can't call setIsPlaying during render, so we use a ref to flag it
+  }
+
+  // Reset isPlaying when audio source changes
+  const prevSceneRef = useRef(sceneIndex);
+  if (sceneIndex !== prevSceneRef.current) {
+    prevSceneRef.current = sceneIndex;
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+  }
+
   const handlePlay = useCallback((): void => {
     if (!audioBase64) return;
     if (isPlaying && audioRef.current) {
       audioRef.current.pause();
       setIsPlaying(false);
       return;
+    }
+    // Stop any existing audio before creating new one
+    if (audioRef.current) {
+      audioRef.current.pause();
     }
     const audio = new Audio(`data:audio/wav;base64,${audioBase64}`);
     audioRef.current = audio;
@@ -924,8 +950,12 @@ export function App(): ReactNode {
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
 
+  // Generation counter to prevent stale media from overwriting current scene
+  const mediaGenRef = useRef(0);
+
   const loadSceneMedia = useCallback(
     async (sid: string, index: number): Promise<void> => {
+      const gen = ++mediaGenRef.current;
       setSceneImage(null);
       setSceneAudio(null);
       setIsLoadingImage(true);
@@ -937,6 +967,10 @@ export function App(): ReactNode {
         narrateScene(sid, index),
       ]);
 
+      // Only apply results if this is still the current generation
+      // (prevents stale results from old scenes overwriting new ones)
+      if (gen !== mediaGenRef.current) return;
+
       if (imageResult.status === "fulfilled") {
         setSceneImage(imageResult.value.image_base64);
       }
@@ -945,16 +979,21 @@ export function App(): ReactNode {
       if (audioResult.status === "fulfilled") {
         setSceneAudio(audioResult.value.audio_base64);
       } else {
-        // Retry narration once after a short delay
+        // Retry narration once
         console.warn("Narration failed, retrying...", audioResult.reason);
         try {
           const retry = await narrateScene(sid, index);
-          setSceneAudio(retry.audio_base64);
+          // Check generation again after retry
+          if (gen === mediaGenRef.current) {
+            setSceneAudio(retry.audio_base64);
+          }
         } catch {
           console.error("Narration retry failed for scene", index);
         }
       }
-      setIsLoadingAudio(false);
+      if (gen === mediaGenRef.current) {
+        setIsLoadingAudio(false);
+      }
     },
     [],
   );
@@ -1042,8 +1081,7 @@ export function App(): ReactNode {
     [sessionId, story, loadSceneMedia],
   );
 
-  const handleRestart = (): void => {
-    setPhase("landing");
+  const resetStoryState = (): void => {
     setSessionId(null);
     setStory(null);
     setCurrentScene(0);
@@ -1052,9 +1090,21 @@ export function App(): ReactNode {
     setIsStoryComplete(false);
   };
 
+  /** Logo click — back to landing page */
+  const handleGoHome = (): void => {
+    resetStoryState();
+    setPhase("landing");
+  };
+
+  /** "Tell Another Story" — skip landing, go straight to setup */
+  const handleNewStory = (): void => {
+    resetStoryState();
+    setPhase("setup");
+  };
+
   return (
     <div className="app-container">
-      <Header minimal={phase === "landing"} onLogoClick={handleRestart} />
+      <Header minimal={phase === "landing"} onLogoClick={handleGoHome} />
 
       {phase === "landing" && <LandingPage onStart={() => setPhase("setup")} />}
 
@@ -1082,7 +1132,7 @@ export function App(): ReactNode {
         <StoryComplete
           story={story}
           scenesCompleted={story.scenes.length}
-          onRestart={handleRestart}
+          onRestart={handleNewStory}
         />
       )}
     </div>
