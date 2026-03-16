@@ -59,21 +59,22 @@ graph LR
 | **Experience the Story** | Each scene features bilingual text, a watercolor illustration, and warm audio narration in both languages               |
 | **Shape the Story**      | Your child makes choices that genuinely change the narrative — each choice generates a brand new scene via the AI agent |
 
-**5 scenes per story. 4 interactive choices. 2 languages bridged. 1 magical bedtime experience.**
+**5 scenes per story. 4 interactive choices. 2 languages bridged. 1 magical bedtime experience. Every story saved to your library.**
 
 ---
 
 ## Key Features
 
-| Feature                      | Description                                                                                                      |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| **Bilingual Narratives**     | Side-by-side text in parent's language + English — natural in both, never awkward translations                   |
-| **Watercolor Illustrations** | Culturally authentic storybook art generated in real time for every scene                                        |
-| **Audio Narration**          | Warm, expressive TTS in both languages — native language first, then English                                     |
-| **Interactive Choices**      | Children shape the story with their decisions. Each choice generates a new scene via ADK agent with full context |
-| **Cultural Authenticity**    | Stories weave in real cultural elements — festivals, landmarks, traditions, foods                                |
-| **20+ Languages**            | Burmese, Spanish, Mandarin, Arabic, Hindi, French, Portuguese, Vietnamese, Korean, Japanese, and more            |
-| **Age-Appropriate**          | Content adapts for children ages 3-10 with appropriate vocabulary and themes                                     |
+| Feature                      | Description                                                                                                        |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Bilingual Narratives**     | Side-by-side text in parent's language + English — natural in both, never awkward translations                     |
+| **Watercolor Illustrations** | Culturally authentic storybook art generated in real time for every scene                                          |
+| **Audio Narration**          | Warm, expressive TTS in both languages — native language first, then English                                       |
+| **Interactive Choices**      | Children shape the story with their decisions. Each choice generates a new scene via ADK agent with full context   |
+| **Cultural Authenticity**    | Stories weave in real cultural elements — festivals, landmarks, traditions, foods                                  |
+| **20+ Languages**            | Burmese, Spanish, Mandarin, Arabic, Hindi, French, Portuguese, Vietnamese, Korean, Japanese, and more              |
+| **Age-Appropriate**          | Content adapts for children ages 3-10 with appropriate vocabulary and themes                                       |
+| **My Stories Library**       | Every completed story auto-saves to Google Cloud Firestore. Re-read any story scene by scene from the landing page |
 
 ---
 
@@ -84,10 +85,11 @@ StoryBridge uses a **multi-agent architecture** powered by Google's Agent Develo
 ```mermaid
 flowchart TB
     subgraph Frontend["Frontend — React 19 + TypeScript"]
-        LP[Landing Page]
+        LP["Landing Page\n+ My Stories Shelf"]
         SF[Setup Form]
         SV[Scene View]
         SC[Story Complete]
+        RV[Reading View]
     end
 
     subgraph Backend["Backend — FastAPI Orchestrator"]
@@ -95,15 +97,14 @@ flowchart TB
     end
 
     subgraph Agents["ADK Agents"]
-        SA["Story Architect\n🔷 Gemini 2.5 Flash\n🔷 ADK Runner + Session State"]
-        IL["Illustrator\n🔷 Gemini Flash Image Gen\n🔷 Watercolor Style"]
-        NA["Narrator\n🔷 Gemini Flash TTS\n🔷 Bilingual Audio"]
+        SA["Story Architect\nGemini 2.5 Flash\nADK Runner + Session"]
+        IL["Illustrator\nGemini Flash Image\nWatercolor Style"]
+        NA["Narrator\nGemini Flash TTS\nBilingual Audio"]
     end
 
-    subgraph Output["Multimodal Output"]
-        TXT["Bilingual Text\n(scene by scene)"]
-        IMG["Watercolor\nIllustrations"]
-        AUD["Audio Narration\n(both languages)"]
+    subgraph Storage["Google Cloud"]
+        FS[("Firestore\nStory Library")]
+        CR["Cloud Run"]
     end
 
     LP -->|"Create Story"| SF
@@ -111,18 +112,20 @@ flowchart TB
     ORCH --> SA
     ORCH --> IL
     ORCH --> NA
-    SA --> TXT
-    IL --> IMG
-    NA --> AUD
-    TXT --> SV
-    IMG --> SV
-    AUD --> SV
+    SA --> SV
+    IL --> SV
+    NA --> SV
     SV -->|"Child's Choice"| ORCH
-    SV --> SC
+    SV -->|"Finish Story"| SC
+    SC -->|"Auto-save"| FS
+    LP -->|"Read Saved Story"| RV
+    FS -->|"GET /api/stories/list"| LP
 
     style SA fill:#c67a4a,color:#fff,stroke:none
     style IL fill:#3d6b4f,color:#fff,stroke:none
     style NA fill:#d4a843,color:#fff,stroke:none
+    style FS fill:#4285f4,color:#fff,stroke:none
+    style CR fill:#4285f4,color:#fff,stroke:none
 ```
 
 ### Why This Architecture
@@ -140,9 +143,13 @@ flowchart TB
 | `/health`               | GET    | Health check                                                            |
 | `/api/story/create`     | POST   | Create story outline + first scene via ADK Story Architect              |
 | `/api/scene/illustrate` | POST   | Generate watercolor illustration using Illustrator agent config         |
-| `/api/scene/narrate`    | POST   | Generate bilingual audio using Narrator agent config (with retry)       |
+| `/api/scene/narrate`    | POST   | Generate bilingual audio (split per language for clean output)          |
 | `/api/scene/choice`     | POST   | Submit child's choice, generate next scene via ADK agent (same session) |
 | `/api/session/{id}`     | GET    | Retrieve full session state                                             |
+| `/api/stories/save`     | POST   | Save completed story to Firestore                                       |
+| `/api/stories/list`     | GET    | List saved stories by browser ID (newest first, max 20)                 |
+| `/api/stories/{id}`     | GET    | Get full saved story for re-reading                                     |
+| `/api/stories/{id}`     | DELETE | Delete a saved story                                                    |
 
 ---
 
@@ -156,6 +163,7 @@ flowchart TB
 | **Story Generation** | Gemini 2.5 Flash via ADK Runner                         |
 | **Image Generation** | Gemini 2.5 Flash Image (native image gen)               |
 | **Text-to-Speech**   | Gemini 2.5 Flash Preview TTS (L16 PCM 24kHz)            |
+| **Storage**          | Google Cloud Firestore (story persistence)              |
 | **Deployment**       | Google Cloud Run (multi-stage Docker)                   |
 | **Design**           | Custom CSS design system — warm earth tones, no AI slop |
 
@@ -231,15 +239,18 @@ storybridge/
 │   ├── .env.example
 │   └── Dockerfile
 ├── frontend/
+│   ├── public/
+│   │   └── favicon.svg           # Book-bridge SVG favicon
 │   ├── src/
-│   │   ├── App.tsx               # Main SPA — landing, setup, scene, completion phases
+│   │   ├── App.tsx               # Main SPA — landing, setup, scene, reading, completion phases
 │   │   ├── main.tsx
 │   │   └── styles/global.css     # Design system (earth tones, storybook aesthetic)
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── vite.config.ts
 ├── docs/
-│   └── DEMO-SCRIPT.md            # 4-minute demo video script
+│   ├── DEMO-SCRIPT.md            # 4-minute demo video script
+│   └── FEATURE-MY-STORIES.md     # My Stories library feature spec + Supabase schema
 ├── Dockerfile                    # Multi-stage build (Node + Python)
 └── README.md
 ```
@@ -294,14 +305,14 @@ quadrantChart
 
 ## Limitations
 
-| Limitation                  | Details                                                     | Mitigation                                         |
-| --------------------------- | ----------------------------------------------------------- | -------------------------------------------------- |
-| **In-Memory Sessions**      | Stories are lost on server restart                          | Production would use PostgreSQL/Firestore          |
-| **No Story Library**        | Cannot save, revisit, or share stories                      | Planned for v2 with user accounts                  |
-| **No Voice Input**          | Text-only interaction for children's choices                | Web Speech API integration planned                 |
-| **Single Voice**            | Same TTS voice (Kore) for all languages                     | Gemini TTS limitation; improves with model updates |
-| **No Offline Mode**         | Requires internet for all AI generation                     | Could cache completed stories for replay           |
-| **Language Quality Varies** | Some language pairs produce better translations than others | Gemini supports 100+ languages but quality varies  |
+| Limitation                  | Details                                                     | Mitigation                                                 |
+| --------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------- |
+| **Session-Based Identity**  | Stories linked to browser UUID, not user accounts           | Supabase Auth planned for v2 (email/Google OAuth)          |
+| **No Voice Input**          | Text-only interaction for children's choices                | Web Speech API integration planned                         |
+| **Single Voice**            | Same TTS voice (Kore) for all languages                     | Gemini TTS limitation; improves with model updates         |
+| **No Offline Mode**         | Requires internet for all AI generation                     | Saved stories can be re-read offline (text only, no media) |
+| **Language Quality Varies** | Some language pairs produce better translations than others | Gemini supports 100+ languages but quality varies          |
+| **No Image Caching**        | Illustrations not persisted; re-read view is text-only      | Cloud Storage caching planned for v2                       |
 
 ---
 
@@ -310,14 +321,16 @@ quadrantChart
 ```mermaid
 timeline
     title StoryBridge Roadmap
-    section Phase 1 — Foundation
+    section Phase 1 — Foundation (Done)
         Hackathon MVP : Story generation, illustration, narration, interactive choices
-        Landing page : Product showcase with architecture
-        Cloud Run deployment : Live production URL
-    section Phase 2 — Persistence (0-6 months)
-        Story library : Save, revisit, and share stories
+        Landing page : Premium product showcase with architecture
+        My Stories Library : Firestore persistence, auto-save, re-read
+        Cloud Run deployment : Live production URL, 14+ revisions
+    section Phase 2 — Growth (0-6 months)
+        User accounts : Supabase Auth, cross-device sync
         Child profiles : Age, language level, preferences
         Voice input : "Speak your choice" via Web Speech API
+        Image caching : Cloud Storage for illustration persistence
         Vocabulary tracking : Per-language word exposure
     section Phase 3 — Community (6-18 months)
         Family sharing : Grandparent starts story, child continues
@@ -333,9 +346,10 @@ timeline
 
 ### Moat Building Strategy
 
-| Priority | Feature                                  | Moat Type                | Timeline   |
+| Priority | Feature                                  | Moat Type                | Status     |
 | -------- | ---------------------------------------- | ------------------------ | ---------- |
-| 1        | Story library (save/revisit/share)       | Emotional switching cost | Month 1-2  |
+| 0        | **Story library (Firestore)**            | Emotional switching cost | **DONE**   |
+| 1        | User accounts + cross-device sync        | Identity lock-in         | Month 1-2  |
 | 2        | Child profiles (age, level, preferences) | Personalization lock-in  | Month 2-3  |
 | 3        | Family sharing (cross-generational)      | Network effect           | Month 3-6  |
 | 4        | Vocabulary tracking per language         | Data moat                | Month 4-6  |
@@ -355,17 +369,20 @@ timeline
 - **Multi-agent architecture** with Google ADK — Story Architect runs through ADK Runner with session state
 - **Three Gemini modalities** used meaningfully — text generation, image generation, and TTS
 - **Real interactivity** — children's choices generate new scenes via the agent with full conversation context
-- **Deployed to production** on Google Cloud Run with a live URL
+- **Persistent story library** — completed stories saved to Firestore, re-readable from the landing page
+- **Deployed to production** on Google Cloud Run with a live URL (14+ revisions)
 - **Emotionally compelling** problem — heritage language loss affects 281M+ migrants worldwide
 - **Blue ocean positioning** — no direct competitor combines all these capabilities
 
-### Gemini APIs Used
+### Google Cloud Services Used
 
-| API              | Model                          | Purpose                                       |
+| Service          | Model / Product                | Purpose                                       |
 | ---------------- | ------------------------------ | --------------------------------------------- |
 | Text Generation  | `gemini-2.5-flash`             | Bilingual story creation via ADK Runner       |
 | Image Generation | `gemini-2.5-flash-image`       | Watercolor storybook illustrations            |
 | Text-to-Speech   | `gemini-2.5-flash-preview-tts` | Bilingual audio narration (Kore voice, 24kHz) |
+| Cloud Firestore  | Native mode, us-central1       | Persistent story library (save/list/read)     |
+| Cloud Run        | Multi-stage Docker             | Production deployment (14+ revisions)         |
 
 ---
 
