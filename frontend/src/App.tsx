@@ -1557,7 +1557,7 @@ export function App(): ReactNode {
   }, []);
 
   useEffect(() => {
-    if (phase === "landing") {
+    if (phase === "landing" || phase === "library") {
       loadSavedStories();
     }
   }, [phase, loadSavedStories]);

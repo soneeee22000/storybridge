@@ -633,6 +633,7 @@ class SaveStoryRequest(BaseModel):
     total_scenes: int
     scenes: list[dict[str, Any]]
     choices: list[str]
+    scene_images: dict[str, str] = {}
 
 
 @app.post("/api/stories/save")
@@ -651,6 +652,7 @@ async def save_story(request: SaveStoryRequest) -> JSONResponse:
         "total_scenes": request.total_scenes,
         "scenes": request.scenes,
         "choices": request.choices,
+        "scene_images": request.scene_images,
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
     try:
