@@ -74,6 +74,7 @@ graph LR
 | **Cultural Authenticity**    | Stories weave in real cultural elements — festivals, landmarks, traditions, foods                                  |
 | **20+ Languages**            | Burmese, Spanish, Mandarin, Arabic, Hindi, French, Portuguese, Vietnamese, Korean, Japanese, and more              |
 | **Age-Appropriate**          | Content adapts for children ages 3-10 with appropriate vocabulary and themes                                       |
+| **Voice Input**              | Children can speak their choices via Web Speech API — beyond the text box for natural interaction                  |
 | **My Stories Library**       | Every completed story auto-saves to Google Cloud Firestore. Re-read any story scene by scene from the landing page |
 
 ---
@@ -96,10 +97,10 @@ flowchart TB
         ORCH["Orchestrator\n(server.py)"]
     end
 
-    subgraph Agents["ADK Agents"]
-        SA["Story Architect\nGemini 2.5 Flash\nADK Runner + Session"]
-        IL["Illustrator\nGemini Flash Image\nWatercolor Style"]
-        NA["Narrator\nGemini Flash TTS\nBilingual Audio"]
+    subgraph Agents["ADK Agents — All 3 via ADK Runner"]
+        SA["Story Architect\nGemini 2.5 Flash\nADK Runner + Session State"]
+        IL["Illustrator\nGemini Flash Image\nADK Runner + Interleaved TEXT+IMAGE"]
+        NA["Narrator\nGemini Flash TTS\nADK Runner + Native Audio Output"]
     end
 
     subgraph Storage["Google Cloud"]
@@ -130,11 +131,13 @@ flowchart TB
 
 ### Why This Architecture
 
-**ADK Runner with Session State** — The Story Architect agent runs through Google ADK's `Runner` with `InMemorySessionService`. This means each child's choice is sent to the **same agent session** — the agent has complete context of the story outline, all previous scenes, and all choices made. This produces genuinely adaptive narratives, not pre-scripted branching.
+**All 3 Agents via ADK Runner** — Every agent runs through Google ADK's `Runner`. The Story Architect uses `InMemorySessionService` to maintain conversation state across scenes — each child's choice is sent to the **same agent session**, producing genuinely adaptive narratives. The Illustrator and Narrator each get per-request ADK sessions for stateless multimodal generation.
 
-**Parallel Media Loading** — Illustration and narration load concurrently via `Promise.allSettled`, with independent retry logic. One failure doesn't block the other.
+**Native Interleaved Output** — The Illustrator agent produces TEXT + IMAGE in a single ADK Runner generation, using Gemini's native interleaved multimodal output — a core Creative Storyteller capability. The Narrator agent produces native AUDIO output through ADK Runner.
 
-**Agent-Defined Configs** — The Illustrator and Narrator agents define their model, instructions, and generation configs. The orchestrator uses these configs to call Gemini, keeping agent definitions as the single source of truth.
+**Voice Input** — Children can speak their choices via the Web Speech API, moving beyond text-only interaction for a more natural, immersive storytelling experience.
+
+**Parallel Media Loading** — Illustration and narration load concurrently via `Promise.allSettled`, with independent retry logic and direct API fallbacks. One failure doesn't block the other.
 
 ### API Endpoints
 
@@ -308,7 +311,6 @@ quadrantChart
 | Limitation                  | Details                                                     | Mitigation                                                 |
 | --------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------- |
 | **Session-Based Identity**  | Stories linked to browser UUID, not user accounts           | Supabase Auth planned for v2 (email/Google OAuth)          |
-| **No Voice Input**          | Text-only interaction for children's choices                | Web Speech API integration planned                         |
 | **Single Voice**            | Same TTS voice (Kore) for all languages                     | Gemini TTS limitation; improves with model updates         |
 | **No Offline Mode**         | Requires internet for all AI generation                     | Saved stories can be re-read offline (text only, no media) |
 | **Language Quality Varies** | Some language pairs produce better translations than others | Gemini supports 100+ languages but quality varies          |
@@ -329,7 +331,7 @@ timeline
     section Phase 2 — Growth (0-6 months)
         User accounts : Supabase Auth, cross-device sync
         Child profiles : Age, language level, preferences
-        Voice input : "Speak your choice" via Web Speech API
+        Voice input : Done — Web Speech API with mic button
         Image caching : Cloud Storage for illustration persistence
         Vocabulary tracking : Per-language word exposure
     section Phase 3 — Community (6-18 months)
@@ -366,8 +368,10 @@ timeline
 
 ### What Makes This a Strong Submission
 
-- **Multi-agent architecture** with Google ADK — Story Architect runs through ADK Runner with session state
+- **All 3 agents through ADK Runner** — Story Architect (session state), Illustrator (interleaved TEXT+IMAGE), Narrator (native AUDIO)
+- **Native interleaved multimodal output** — Illustrator produces text + image in a single ADK generation
 - **Three Gemini modalities** used meaningfully — text generation, image generation, and TTS
+- **Voice input** — children speak their choices via Web Speech API (beyond the text box)
 - **Real interactivity** — children's choices generate new scenes via the agent with full conversation context
 - **Persistent story library** — completed stories saved to Firestore, re-readable from the landing page
 - **Deployed to production** on Google Cloud Run with a live URL (14+ revisions)

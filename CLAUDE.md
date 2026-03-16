@@ -43,11 +43,11 @@ Multi-agent system using Google ADK:
 
 ## Key Files
 
-- `backend/server.py` — FastAPI server, all REST endpoints + static file serving in production
-- `backend/agents/orchestrator.py` — Root ADK agent
-- `backend/agents/story_architect.py` — Story generation agent
-- `backend/agents/illustrator.py` — Image generation agent (model: gemini-2.5-flash-image)
-- `backend/agents/narrator.py` — TTS narration agent (model: gemini-2.5-flash-preview-tts)
+- `backend/server.py` — FastAPI server + orchestrator, coordinates ADK agents via Runner
+- `backend/agents/orchestrator.py` — Root ADK agent definition (architecture documentation)
+- `backend/agents/story_architect.py` — Story generation agent (runs through ADK Runner with session state)
+- `backend/agents/illustrator.py` — Image generation agent config (model: gemini-2.5-flash-image)
+- `backend/agents/narrator.py` — TTS narration agent config (model: gemini-2.5-flash-preview-tts)
 - `frontend/src/App.tsx` — Main React app with storybook UI
 - `frontend/src/styles/global.css` — Design system
 - `Dockerfile` — Multi-stage build (Node frontend + Python backend), uses `${PORT:-8080}` for Cloud Run
@@ -95,6 +95,8 @@ GCLOUD="C:/Users/pyaes/AppData/Local/Google/Cloud SDK/google-cloud-sdk/bin/gclou
 
 - [x] GCP project created & configured
 - [x] Multi-agent engine built and verified (all 3 Gemini APIs working)
+- [x] **ADK integration** — Story Architect runs through ADK Runner with session state
+- [x] **Interactive choices are real** — child's choices generate new scenes via ADK agent
 - [x] Frontend UI (warm storybook design, no AI slop)
 - [x] Architecture diagram (Excalidraw)
 - [x] GitHub repo public with README
@@ -102,6 +104,20 @@ GCLOUD="C:/Users/pyaes/AppData/Local/Google/Cloud SDK/google-cloud-sdk/bin/gclou
 - [x] Demo video script written (docs/DEMO-SCRIPT.md)
 - [x] GIF walkthrough captured (storybridge-demo-walkthrough.gif)
 - [x] Devpost project name + elevator pitch filled (draft saved)
+- [x] **Landing page** — 6-section premium page (Hero with logo, Problem stats, How It Works, Features, Architecture, CTA)
+- [x] **Premium design upgrade** — Playfair Display hero font, floating decorative elements, colored accent stripes, hover lift cards, connecting step lines
+- [x] **Logo + favicon** — Book-bridge SVG mark (two pages meeting, green + gold text lines)
+- [x] **UX polish** — Error handling, generating overlay, scene 5 "Finish Story" button, improved completion screen
+- [x] **Audio bug fix** — Generation counter prevents stale audio from old scenes overwriting current
+- [x] **Navigation fix** — "Tell Another Story" goes to setup form; logo click goes to landing
+- [x] **Redeployed to Cloud Run** — All changes live (latest revision storybridge-00012-lmk)
+- [x] **README.md overhaul** — Mermaid diagrams, PMF analysis, limitations, roadmap, competitive landscape
+- [x] **GitHub repo about** — Description, homepage, 14 topics/tags updated
+- [x] **ALL 3 agents through ADK Runner** — Story Architect, Illustrator, Narrator all run via ADK Runner
+- [x] **Native interleaved output** — Illustrator produces TEXT + IMAGE in single ADK generation
+- [x] **Voice input** — Web Speech API for children's choices (mic button with pulse animation)
+- [x] **Demo script fixed** — "70 languages" corrected to "20+"
+- [x] **Redeploying to Cloud Run** — All technical upgrades deploying
 - [ ] Record demo video with voiceover and upload to YouTube
 - [ ] Take GCP deployment screenshot for submission
 - [ ] Complete Devpost form (project details, additional info) and submit
@@ -110,6 +126,7 @@ GCLOUD="C:/Users/pyaes/AppData/Local/Google/Cloud SDK/google-cloud-sdk/bin/gclou
 
 - No gradient backgrounds on buttons or UI elements
 - Warm earth tones (cream, terracotta, forest green, deep brown)
-- Crimson Pro for story text, Inter for UI
+- Playfair Display for hero/section headings, Crimson Pro for story text, Inter for UI
 - Watercolor storybook aesthetic
 - No AI slop — every element should feel handcrafted
+- Book-bridge logo: two pages meeting at center, green text lines (native) + gold text lines (English)

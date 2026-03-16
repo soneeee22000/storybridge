@@ -72,6 +72,7 @@ type AppPhase =
   | "loading"
   | "scene"
   | "complete"
+  | "library"
   | "reading";
 
 const API_BASE = "/api";
@@ -198,6 +199,7 @@ interface SavedStoryFull extends SavedStorySummary {
   choices: string[];
   child_age: number;
   cultural_elements: string;
+  scene_images?: Record<string, string>;
 }
 
 async function saveStoryToLibrary(params: {
@@ -208,6 +210,7 @@ async function saveStoryToLibrary(params: {
   childAge: number;
   storyTheme: string;
   culturalElements: string;
+  sceneImages: Record<number, string>;
 }): Promise<void> {
   await fetch(`${API_BASE}/stories/save`, {
     method: "POST",
@@ -223,6 +226,7 @@ async function saveStoryToLibrary(params: {
       total_scenes: params.story.total_scenes,
       scenes: params.scenes,
       choices: params.choices,
+      scene_images: params.sceneImages,
     }),
   });
 }
@@ -339,11 +343,43 @@ function LogoMark({ size = 36 }: { size?: number }): ReactNode {
 function Header({
   minimal,
   onLogoClick,
+  onLibraryClick,
 }: {
   minimal?: boolean;
   onLogoClick?: () => void;
+  onLibraryClick?: () => void;
 }): ReactNode {
-  if (minimal) return null;
+  if (minimal) {
+    return (
+      <header className="app-header" style={{ padding: "var(--space-md) 0" }}>
+        <div className="header-row">
+          <div />
+          <div className="header-links">
+            <button
+              className="header-link header-library-btn"
+              onClick={onLibraryClick}
+              aria-label="My Stories"
+              type="button"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </header>
+    );
+  }
   return (
     <header className="app-header">
       <div className="header-row">
@@ -389,6 +425,26 @@ function Header({
               <circle cx="12" cy="7" r="4" />
             </svg>
           </a>
+          <button
+            className="header-link header-library-btn"
+            onClick={onLibraryClick}
+            aria-label="My Stories"
+            type="button"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
+            </svg>
+          </button>
         </div>
       </div>
       <p className="app-subtitle">
@@ -398,55 +454,72 @@ function Header({
   );
 }
 
-function MyStories({
+function LibraryPage({
   stories,
   onRead,
   onRefresh,
+  onCreateNew,
 }: {
   stories: SavedStorySummary[];
   onRead: (storyId: string) => void;
   onRefresh: () => void;
+  onCreateNew: () => void;
 }): ReactNode {
-  if (stories.length === 0) return null;
-
   const handleDelete = async (storyId: string): Promise<void> => {
     await deleteStoryFromLibrary(storyId);
     onRefresh();
   };
 
   return (
-    <section className="my-stories-section">
-      <h2 className="my-stories-title">My Stories ({stories.length})</h2>
-      <div className="my-stories-shelf">
-        {stories.map((s) => (
-          <div key={s.story_id} className="my-stories-card">
-            <button
-              className="my-stories-card-btn"
-              onClick={() => onRead(s.story_id)}
-              type="button"
-            >
-              <p className="my-stories-card-title">{s.story_title_native}</p>
-              <p className="my-stories-card-english">{s.story_title_english}</p>
-              <div className="my-stories-card-meta">
-                <span className="my-stories-card-badge">{s.story_theme}</span>
-                <span className="my-stories-card-badge">
-                  {s.parent_language}
-                </span>
-              </div>
-              <p className="my-stories-card-scenes">{s.total_scenes} scenes</p>
-            </button>
-            <button
-              className="my-stories-delete"
-              onClick={() => handleDelete(s.story_id)}
-              aria-label="Delete story"
-              type="button"
-            >
-              x
-            </button>
-          </div>
-        ))}
+    <div className="library-page">
+      <div className="library-header">
+        <h2 className="library-title">My Stories</h2>
+        <button className="btn-primary landing-cta" onClick={onCreateNew}>
+          Create New Story
+        </button>
       </div>
-    </section>
+      {stories.length === 0 ? (
+        <div className="library-empty">
+          <p className="library-empty-text">
+            No stories yet. Create your first bilingual bedtime story and it
+            will appear here.
+          </p>
+          <button className="btn-primary landing-cta" onClick={onCreateNew}>
+            Create Your First Story
+          </button>
+        </div>
+      ) : (
+        <div className="library-grid">
+          {stories.map((s) => (
+            <div key={s.story_id} className="library-card">
+              <button
+                className="library-card-btn"
+                onClick={() => onRead(s.story_id)}
+                type="button"
+              >
+                <p className="library-card-title">{s.story_title_native}</p>
+                <p className="library-card-english">{s.story_title_english}</p>
+                <div className="library-card-meta">
+                  <span className="library-card-badge">{s.story_theme}</span>
+                  <span className="library-card-badge">
+                    {s.parent_language}
+                  </span>
+                </div>
+                <p className="library-card-scenes">{s.total_scenes} scenes</p>
+              </button>
+              <button
+                className="library-card-delete"
+                onClick={() => handleDelete(s.story_id)}
+                aria-label="Delete story"
+                type="button"
+              >
+                x
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -471,6 +544,26 @@ function ReadingView({
   return (
     <div className="scene-container">
       <div className="scene-page">
+        {/* Saved illustration */}
+        {story.scene_images && story.scene_images[String(sceneIndex)] ? (
+          <img
+            className="scene-illustration"
+            src={`data:image/png;base64,${story.scene_images[String(sceneIndex)]}`}
+            alt={scene.title_english}
+          />
+        ) : (
+          <div className="scene-illustration-placeholder">
+            <span
+              style={{
+                fontFamily: "var(--font-story)",
+                fontStyle: "italic",
+                color: "var(--color-terracotta)",
+              }}
+            >
+              Illustration from your story session
+            </span>
+          </div>
+        )}
         <div className="scene-content">
           <div className="scene-header">
             <span className="scene-number">
@@ -522,17 +615,7 @@ function ReadingView({
   );
 }
 
-function LandingPage({
-  onStart,
-  savedStories,
-  onReadStory,
-  onRefreshStories,
-}: {
-  onStart: () => void;
-  savedStories: SavedStorySummary[];
-  onReadStory: (storyId: string) => void;
-  onRefreshStories: () => void;
-}): ReactNode {
+function LandingPage({ onStart }: { onStart: () => void }): ReactNode {
   return (
     <div className="landing">
       {/* Hero */}
@@ -554,12 +637,6 @@ function LandingPage({
           Create Your Story
         </button>
       </section>
-
-      <MyStories
-        stories={savedStories}
-        onRead={onReadStory}
-        onRefresh={onRefreshStories}
-      />
 
       {/* Problem */}
       <section className="landing-section">
@@ -1330,6 +1407,8 @@ export function App(): ReactNode {
     culturalElements: string;
   } | null>(null);
 
+  const sceneImagesRef = useRef<Record<number, string>>({});
+
   // Generation counter to prevent stale media from overwriting current scene
   const mediaGenRef = useRef(0);
 
@@ -1353,6 +1432,7 @@ export function App(): ReactNode {
 
       if (imageResult.status === "fulfilled") {
         setSceneImage(imageResult.value.image_base64);
+        sceneImagesRef.current[index] = imageResult.value.image_base64;
       }
       setIsLoadingImage(false);
 
@@ -1501,6 +1581,7 @@ export function App(): ReactNode {
     setSceneImage(null);
     setSceneAudio(null);
     setIsStoryComplete(false);
+    sceneImagesRef.current = {};
   };
 
   /** Logo click — back to landing page */
@@ -1517,16 +1598,16 @@ export function App(): ReactNode {
 
   return (
     <div className="app-container">
-      <Header minimal={phase === "landing"} onLogoClick={handleGoHome} />
+      <Header
+        minimal={phase === "landing"}
+        onLogoClick={handleGoHome}
+        onLibraryClick={() => {
+          loadSavedStories();
+          setPhase("library");
+        }}
+      />
 
-      {phase === "landing" && (
-        <LandingPage
-          onStart={() => setPhase("setup")}
-          savedStories={savedStories}
-          onReadStory={handleReadStory}
-          onRefreshStories={loadSavedStories}
-        />
-      )}
+      {phase === "landing" && <LandingPage onStart={() => setPhase("setup")} />}
 
       {phase === "setup" && <SetupForm onSubmit={handleStartStory} />}
 
@@ -1554,10 +1635,20 @@ export function App(): ReactNode {
                 childAge: storySetupRef.current.childAge,
                 storyTheme: storySetupRef.current.storyTheme,
                 culturalElements: storySetupRef.current.culturalElements,
+                sceneImages: { ...sceneImagesRef.current },
               }).catch((err) => console.error("Failed to save story:", err));
             }
             setPhase("complete");
           }}
+        />
+      )}
+
+      {phase === "library" && (
+        <LibraryPage
+          stories={savedStories}
+          onRead={handleReadStory}
+          onRefresh={loadSavedStories}
+          onCreateNew={() => setPhase("setup")}
         />
       )}
 
@@ -1570,7 +1661,8 @@ export function App(): ReactNode {
           onClose={() => {
             setReadingStory(null);
             setReadingSceneIndex(0);
-            setPhase("landing");
+            loadSavedStories();
+            setPhase("library");
           }}
         />
       )}
