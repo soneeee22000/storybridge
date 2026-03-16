@@ -1009,11 +1009,22 @@ function SetupForm({
   );
 }
 
-function LoadingScreen({ message }: { message: string }): ReactNode {
+function LoadingScreen({
+  message,
+  streamingText,
+}: {
+  message: string;
+  streamingText?: string;
+}): ReactNode {
   return (
     <div className="loading-container">
       <div className="loading-spinner" />
       <p className="loading-text">{message}</p>
+      {streamingText && (
+        <div className="streaming-preview">
+          <p className="streaming-text">{streamingText}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -1396,6 +1407,7 @@ export function App(): ReactNode {
   const [isLoadingImage, setIsLoadingImage] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
+  const [streamingText, setStreamingText] = useState("");
   const [savedStories, setSavedStories] = useState<SavedStorySummary[]>([]);
   const [readingStory, setReadingStory] = useState<SavedStoryFull | null>(null);
   const [readingSceneIndex, setReadingSceneIndex] = useState(0);
@@ -1468,6 +1480,7 @@ export function App(): ReactNode {
     }): Promise<void> => {
       setPhase("loading");
       setLoadingMessage("Weaving your story across languages...");
+      setStreamingText("");
       storySetupRef.current = {
         parentLanguage: data.parent_language,
         childAge: data.child_age,
@@ -1611,7 +1624,9 @@ export function App(): ReactNode {
 
       {phase === "setup" && <SetupForm onSubmit={handleStartStory} />}
 
-      {phase === "loading" && <LoadingScreen message={loadingMessage} />}
+      {phase === "loading" && (
+        <LoadingScreen message={loadingMessage} streamingText={streamingText} />
+      )}
 
       {phase === "scene" && story && story.scenes[currentScene] && (
         <SceneView
