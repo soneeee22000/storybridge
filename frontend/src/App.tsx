@@ -692,7 +692,9 @@ function SceneView({
   isLoadingImage,
   isLoadingAudio,
   isGenerating,
+  isFinalScene,
   onChoice,
+  onFinish,
 }: {
   scene: Scene;
   sceneIndex: number;
@@ -702,7 +704,9 @@ function SceneView({
   isLoadingImage: boolean;
   isLoadingAudio: boolean;
   isGenerating: boolean;
+  isFinalScene: boolean;
   onChoice: (choice: string) => void;
+  onFinish: () => void;
 }): ReactNode {
   const [choice, setChoice] = useState("");
   const [isPlaying, setIsPlaying] = useState(false);
@@ -824,7 +828,7 @@ function SceneView({
           </div>
 
           {/* Interactive choice — hidden on final scene */}
-          {scene.interactive_prompt_native && (
+          {scene.interactive_prompt_native && !isFinalScene && (
             <div className="choice-section">
               <p className="choice-prompt">{scene.interactive_prompt_native}</p>
               <p className="choice-prompt-english">
@@ -848,6 +852,21 @@ function SceneView({
                   Continue
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Finish button on final scene */}
+          {isFinalScene && (
+            <div className="choice-section" style={{ textAlign: "center" }}>
+              <p
+                className="choice-prompt"
+                style={{ fontStyle: "italic", marginBottom: "1rem" }}
+              >
+                And so the story comes to a close...
+              </p>
+              <button className="btn-primary landing-cta" onClick={onFinish}>
+                Finish Story
+              </button>
             </div>
           )}
         </div>
@@ -971,6 +990,7 @@ export function App(): ReactNode {
   );
 
   const [isGeneratingScene, setIsGeneratingScene] = useState(false);
+  const [isStoryComplete, setIsStoryComplete] = useState(false);
 
   const handleChoice = useCallback(
     async (choice: string): Promise<void> => {
@@ -984,16 +1004,18 @@ export function App(): ReactNode {
 
         if (result.completed) {
           if (result.scene) {
+            // Show the final scene — DON'T jump to completion yet.
+            // The user needs to read/listen to scene 5 first.
+            // They'll click "Finish Story" when ready.
             setStory((prev) =>
               prev
                 ? { ...prev, scenes: [...prev.scenes, result.scene as Scene] }
                 : prev,
             );
             setCurrentScene(result.current_scene);
-            // Now clear old media and load new
             setIsGeneratingScene(false);
+            setIsStoryComplete(true);
             await loadSceneMedia(sessionId, result.current_scene);
-            setPhase("complete");
           } else {
             setIsGeneratingScene(false);
             setPhase("complete");
@@ -1027,6 +1049,7 @@ export function App(): ReactNode {
     setCurrentScene(0);
     setSceneImage(null);
     setSceneAudio(null);
+    setIsStoryComplete(false);
   };
 
   return (
@@ -1049,7 +1072,9 @@ export function App(): ReactNode {
           isLoadingImage={isLoadingImage}
           isLoadingAudio={isLoadingAudio}
           isGenerating={isGeneratingScene}
+          isFinalScene={isStoryComplete}
           onChoice={handleChoice}
+          onFinish={() => setPhase("complete")}
         />
       )}
 
