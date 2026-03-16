@@ -1,27 +1,44 @@
-"""StoryBridge FastAPI server — serves the multi-agent storytelling system.
+"""StoryBridge FastAPI server — orchestrates the multi-agent storytelling pipeline.
 
-Provides REST API endpoints for the React frontend to interact with
-the ADK agent pipeline.
+The server acts as the Orchestrator, coordinating three ADK agents:
+- Story Architect (ADK Runner) — generates bilingual story content incrementally
+- Illustrator (Gemini image gen) — creates watercolor storybook illustrations
+- Narrator (Gemini TTS) — produces bilingual audio narration
+
+The Story Architect runs through Google ADK's Runner with session state,
+enabling truly interactive storytelling where children's choices shape the narrative.
 """
 
+import asyncio
 import base64
 import json
+import logging
 import os
+import struct
 import uuid
 from typing import Any
+
+logger = logging.getLogger("storybridge")
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from google import genai
+from google.adk import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
 from pydantic import BaseModel
+
+from agents.illustrator import illustrator as illustrator_agent
+from agents.narrator import narrator as narrator_agent
+from agents.story_architect import story_architect
 
 load_dotenv()
 
 app = FastAPI(
     title="StoryBridge API",
-    description="Bilingual family storytelling companion powered by Gemini",
+    description="Bilingual family storytelling companion powered by Gemini ADK agents",
     version="1.0.0",
 )
 
@@ -33,11 +50,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Gemini client
-client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+# --------------------------------------------------------------------------- #
+#  Agent infrastructure                                                        #
+# --------------------------------------------------------------------------- #
 
-# In-memory session store
+# Gemini client for illustration & narration (multimodal agents)
+gemini_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+
+# ADK Runner for the Story Architect agent (maintains conversation state)
+ADK_APP_NAME = "storybridge"
+session_service = InMemorySessionService()
+story_runner = Runner(
+    agent=story_architect,
+    session_service=session_service,
+    app_name=ADK_APP_NAME,
+)
+
+# Local session metadata (supplements ADK session state)
 sessions: dict[str, dict[str, Any]] = {}
+
+
+# --------------------------------------------------------------------------- #
+#  Request / response models                                                   #
+# --------------------------------------------------------------------------- #
 
 
 class StoryRequest(BaseModel):
@@ -57,62 +92,78 @@ class SceneChoiceRequest(BaseModel):
     choice: str
 
 
-class SessionResponse(BaseModel):
-    """Response containing session info."""
-
-    session_id: str
-    message: str
+# --------------------------------------------------------------------------- #
+#  ADK helper — collect text from Runner events                                #
+# --------------------------------------------------------------------------- #
 
 
-STORY_ARCHITECT_PROMPT = """You are a master storyteller who creates bilingual children's stories.
+def _run_story_agent(user_id: str, session_id: str, message: str) -> str:
+    """Send a message to the Story Architect agent and collect the text response.
 
-Create a story with exactly 5 scenes based on this input:
-- Parent's language: {parent_language}
-- Child's age: {child_age}
-- Theme: {story_theme}
-- Cultural elements to include: {cultural_elements}
-- Story seed/idea: {story_seed}
+    Uses the ADK Runner which maintains full conversation history in the
+    session, so the agent has context of the entire story when generating
+    subsequent scenes.
+    """
+    response_text = ""
+    for event in story_runner.run(
+        user_id=user_id,
+        session_id=session_id,
+        new_message=types.Content(
+            parts=[types.Part(text=message)],
+            role="user",
+        ),
+    ):
+        if event.is_final_response() and event.content and event.content.parts:
+            for part in event.content.parts:
+                if hasattr(part, "text") and part.text:
+                    response_text += part.text
+    return response_text
 
-For each scene, output a JSON object with these fields:
-- scene_number (int)
-- title_native (string, in {parent_language})
-- title_english (string)
-- narration_native (string, 2-3 sentences in {parent_language})
-- narration_english (string, 2-3 sentences in English)
-- image_prompt (string, detailed visual description for illustration — warm watercolor storybook style, culturally authentic, child-friendly, 16:9 landscape)
-- cultural_element (string, what cultural element is featured)
-- interactive_prompt_native (string, a question/choice for the child in {parent_language})
-- interactive_prompt_english (string, same question/choice in English)
 
-Output ONLY valid JSON: {{"story_title_native": "...", "story_title_english": "...", "scenes": [...]}}
-No markdown, no code blocks, just raw JSON.
-"""
+def _wrap_pcm_as_wav(pcm_data: bytes, sample_rate: int = 24000, channels: int = 1, bits_per_sample: int = 16) -> bytes:
+    """Wrap raw PCM audio data with a WAV header so browsers can play it.
 
-ILLUSTRATION_PROMPT = """Generate a warm, beautiful watercolor storybook illustration for a children's story scene.
+    Gemini TTS returns raw L16 PCM at 24kHz. Browsers need a valid WAV
+    container (RIFF header) to decode it.
+    """
+    data_size = len(pcm_data)
+    byte_rate = sample_rate * channels * bits_per_sample // 8
+    block_align = channels * bits_per_sample // 8
 
-Style: Premium children's picture book, warm watercolor with soft edges
-Mood: Cozy, magical, wonder-filled
-Colors: Rich, warm palette
-Aspect: Landscape (16:9)
-Important: NO text in the image. Safe for children ages 3-10.
+    header = struct.pack(
+        "<4sI4s4sIHHIIHH4sI",
+        b"RIFF",
+        36 + data_size,       # file size - 8
+        b"WAVE",
+        b"fmt ",
+        16,                   # fmt chunk size
+        1,                    # PCM format
+        channels,
+        sample_rate,
+        byte_rate,
+        block_align,
+        bits_per_sample,
+        b"data",
+        data_size,
+    )
+    return header + pcm_data
 
-Scene to illustrate: {image_prompt}
-"""
 
-NARRATION_PROMPT = """Read this children's story scene aloud in a warm, gentle storytelling voice, like a loving parent reading a bedtime story.
+def _parse_json_response(text: str) -> dict[str, Any]:
+    """Parse JSON from agent response, stripping markdown fences if present."""
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("\n", 1)[1]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3].strip()
+        elif "```" in cleaned:
+            cleaned = cleaned[: cleaned.rfind("```")].strip()
+    return json.loads(cleaned)
 
-First, read in {parent_language}:
-{narration_native}
 
-Then, read in English:
-{narration_english}
-
-Then ask the interactive question in both languages:
-{interactive_prompt_native}
-{interactive_prompt_english}
-
-Keep a brief pause between language switches. Be expressive and warm.
-"""
+# --------------------------------------------------------------------------- #
+#  Endpoints                                                                   #
+# --------------------------------------------------------------------------- #
 
 
 @app.get("/health")
@@ -123,47 +174,65 @@ async def health_check() -> dict[str, str]:
 
 @app.post("/api/story/create")
 async def create_story(request: StoryRequest) -> JSONResponse:
-    """Create a new story outline based on the parent's input."""
+    """Create a new story using the Story Architect ADK agent.
+
+    The agent generates a story outline (5 scenes) plus the complete first
+    scene. Subsequent scenes are generated incrementally as the child makes
+    choices, allowing real interactivity.
+    """
     session_id = str(uuid.uuid4())
+    user_id = f"user-{session_id}"
 
     try:
-        # Generate story outline
-        prompt = STORY_ARCHITECT_PROMPT.format(
-            parent_language=request.parent_language,
-            child_age=request.child_age,
-            story_theme=request.story_theme,
-            cultural_elements=request.cultural_elements or "traditional elements",
-            story_seed=request.story_seed or request.story_theme,
+        # Create ADK session (maintains conversation state for this story)
+        await session_service.create_session(
+            app_name=ADK_APP_NAME,
+            user_id=user_id,
+            session_id=session_id,
         )
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
+        # Ask the Story Architect to create the story outline + first scene
+        prompt = (
+            f"Create a bilingual children's story with these parameters:\n"
+            f"- Parent's language: {request.parent_language}\n"
+            f"- Child's age: {request.child_age}\n"
+            f"- Theme: {request.story_theme}\n"
+            f"- Cultural elements: {request.cultural_elements or 'traditional elements'}\n"
+            f"- Story seed: {request.story_seed or request.story_theme}\n\n"
+            f"Generate the story outline and the complete first scene."
         )
 
-        # Parse the story JSON
-        story_text = response.text.strip()
-        # Remove potential markdown code blocks
-        if story_text.startswith("```"):
-            story_text = story_text.split("\n", 1)[1]
-            if story_text.endswith("```"):
-                story_text = story_text[:-3].strip()
+        response_text = _run_story_agent(user_id, session_id, prompt)
+        story_data = _parse_json_response(response_text)
 
-        story_data = json.loads(story_text)
+        # Extract the first scene from the response
+        first_scene = story_data.get("scene", story_data.get("scenes", [{}])[0])
+        total_scenes = story_data.get("total_scenes", 5)
 
-        # Store session
+        # Build the story structure for the frontend
+        story_response = {
+            "story_title_native": story_data.get("story_title_native", ""),
+            "story_title_english": story_data.get("story_title_english", ""),
+            "scenes": [first_scene],
+            "total_scenes": total_scenes,
+        }
+
+        # Store session metadata
         sessions[session_id] = {
-            "story": story_data,
+            "user_id": user_id,
             "parent_language": request.parent_language,
             "child_age": request.child_age,
+            "story_data": story_data,
+            "scenes": [first_scene],
             "current_scene": 0,
             "choices": [],
+            "total_scenes": total_scenes,
         }
 
         return JSONResponse(
             content={
                 "session_id": session_id,
-                "story": story_data,
+                "story": story_response,
             }
         )
 
@@ -184,12 +253,16 @@ async def illustrate_scene(
     session_id: str,
     scene_index: int,
 ) -> JSONResponse:
-    """Generate an illustration for a specific scene."""
+    """Generate an illustration using the Illustrator agent's configuration.
+
+    Uses the Illustrator agent's model (gemini-2.5-flash-image) and config
+    to generate warm watercolor storybook illustrations.
+    """
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
 
     session = sessions[session_id]
-    scenes = session["story"]["scenes"]
+    scenes = session["scenes"]
 
     if scene_index >= len(scenes):
         raise HTTPException(status_code=400, detail="Invalid scene index")
@@ -197,14 +270,17 @@ async def illustrate_scene(
     scene = scenes[scene_index]
 
     try:
-        prompt = ILLUSTRATION_PROMPT.format(image_prompt=scene["image_prompt"])
+        # Build prompt using the Illustrator agent's instruction context
+        prompt = (
+            f"{illustrator_agent.instruction}\n\n"
+            f"Scene to illustrate: {scene['image_prompt']}"
+        )
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-image",
+        # Call Gemini using the Illustrator agent's model and config
+        response = gemini_client.models.generate_content(
+            model=illustrator_agent.model,
             contents=prompt,
-            config={
-                "response_modalities": ["TEXT", "IMAGE"],
-            },
+            config=illustrator_agent.generate_content_config,
         )
 
         # Extract image from response
@@ -242,102 +318,163 @@ async def narrate_scene(
     session_id: str,
     scene_index: int,
 ) -> JSONResponse:
-    """Generate audio narration for a specific scene."""
+    """Generate audio narration using the Narrator agent's configuration.
+
+    Uses the Narrator agent's model (gemini-2.5-flash-preview-tts) and voice
+    config to produce warm bilingual audio narration. Retries up to 3 times
+    on transient failures (rate limits, API errors).
+    """
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
 
     session = sessions[session_id]
-    scenes = session["story"]["scenes"]
+    scenes = session["scenes"]
 
     if scene_index >= len(scenes):
         raise HTTPException(status_code=400, detail="Invalid scene index")
 
     scene = scenes[scene_index]
 
-    try:
-        prompt = NARRATION_PROMPT.format(
-            parent_language=session["parent_language"],
-            narration_native=scene["narration_native"],
-            narration_english=scene["narration_english"],
-            interactive_prompt_native=scene["interactive_prompt_native"],
-            interactive_prompt_english=scene["interactive_prompt_english"],
+    prompt = (
+        f"Read this children's story scene aloud in a warm, gentle "
+        f"storytelling voice, like a loving parent reading a bedtime story.\n\n"
+        f"First, read in {session['parent_language']}:\n"
+        f"{scene['narration_native']}\n\n"
+        f"Then, read in English:\n"
+        f"{scene['narration_english']}\n\n"
+    )
+
+    # Add interactive prompts if present (not on final scene)
+    if scene.get("interactive_prompt_native"):
+        prompt += (
+            f"Then ask the interactive question in both languages:\n"
+            f"{scene['interactive_prompt_native']}\n"
+            f"{scene['interactive_prompt_english']}\n\n"
         )
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-preview-tts",
-            contents=prompt,
-            config={
-                "response_modalities": ["AUDIO"],
-                "speech_config": {
-                    "voice_config": {
-                        "prebuilt_voice_config": {
-                            "voice_name": "Kore",
-                        }
-                    }
-                },
-            },
-        )
+    prompt += "Keep a brief pause between language switches. Be expressive and warm."
 
-        # Extract audio from response
-        audio_data = None
-        for part in response.candidates[0].content.parts:
-            if part.inline_data and part.inline_data.mime_type.startswith("audio/"):
-                audio_data = base64.b64encode(part.inline_data.data).decode("utf-8")
-                break
+    max_retries = 3
+    last_error: Exception | None = None
 
-        if not audio_data:
-            raise HTTPException(
-                status_code=500,
-                detail="No audio generated",
+    for attempt in range(max_retries):
+        try:
+            # Call Gemini using the Narrator agent's model and config
+            response = gemini_client.models.generate_content(
+                model=narrator_agent.model,
+                contents=prompt,
+                config=narrator_agent.generate_content_config,
             )
 
-        return JSONResponse(
-            content={
-                "scene_index": scene_index,
-                "audio_base64": audio_data,
-                "mime_type": "audio/wav",
-            }
-        )
+            # Extract audio from response and wrap as WAV
+            audio_data = None
+            for part in response.candidates[0].content.parts:
+                if part.inline_data and part.inline_data.mime_type.startswith("audio/"):
+                    # Gemini TTS returns raw PCM (L16, 24kHz) — wrap with WAV header
+                    raw_pcm = part.inline_data.data
+                    wav_bytes = _wrap_pcm_as_wav(raw_pcm, sample_rate=24000)
+                    audio_data = base64.b64encode(wav_bytes).decode("utf-8")
+                    break
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Narration generation failed: {str(e)}",
-        )
+            if audio_data:
+                return JSONResponse(
+                    content={
+                        "scene_index": scene_index,
+                        "audio_base64": audio_data,
+                        "mime_type": "audio/wav",
+                    }
+                )
+
+            logger.warning(
+                "Narration attempt %d/%d: no audio in response for scene %d",
+                attempt + 1, max_retries, scene_index,
+            )
+
+        except Exception as e:
+            last_error = e
+            logger.warning(
+                "Narration attempt %d/%d failed for scene %d: %s",
+                attempt + 1, max_retries, scene_index, str(e),
+            )
+
+        # Back off before retry
+        if attempt < max_retries - 1:
+            await asyncio.sleep(2 * (attempt + 1))
+
+    detail = f"Narration failed after {max_retries} attempts"
+    if last_error:
+        detail += f": {str(last_error)}"
+    raise HTTPException(status_code=500, detail=detail)
 
 
 @app.post("/api/scene/choice")
 async def make_choice(request: SceneChoiceRequest) -> JSONResponse:
-    """Process a child's choice and advance the story."""
+    """Process a child's choice and generate the next scene.
+
+    Uses the Story Architect ADK agent (same session) to generate a new scene
+    that incorporates the child's choice. Because ADK maintains conversation
+    history, the agent has full context of the story outline and all previous
+    scenes, producing a coherent continuation.
+    """
     if request.session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
 
     session = sessions[request.session_id]
     session["choices"].append(request.choice)
-    session["current_scene"] += 1
 
-    current = session["current_scene"]
-    total = len(session["story"]["scenes"])
+    next_scene_num = session["current_scene"] + 2  # 1-indexed
+    total = session["total_scenes"]
+    is_final = next_scene_num >= total
 
-    if current >= total:
+    try:
+        # Ask the Story Architect to generate the next scene based on the choice
+        prompt = (
+            f"The child chose: \"{request.choice}\"\n\n"
+            f"Generate scene {next_scene_num} of {total} for this story. "
+            f"Incorporate the child's choice into the narrative — their decision "
+            f"should meaningfully affect what happens next.\n"
+        )
+        if is_final:
+            prompt += (
+                f"\nThis is the FINAL scene. Write a warm, satisfying conclusion "
+                f"that ties the story together. Do NOT include interactive prompts."
+            )
+
+        response_text = _run_story_agent(
+            session["user_id"],
+            request.session_id,
+            prompt,
+        )
+
+        scene_data = _parse_json_response(response_text)
+        new_scene = scene_data.get("scene", scene_data)
+
+        # Update session
+        session["scenes"].append(new_scene)
+        session["current_scene"] += 1
+
+        current = session["current_scene"]
+        completed = current >= total - 1 and is_final
+
         return JSONResponse(
             content={
-                "completed": True,
-                "message": "Story complete! What a wonderful adventure!",
+                "completed": completed,
+                "current_scene": current,
                 "total_scenes": total,
+                "scene": new_scene,
             }
         )
 
-    return JSONResponse(
-        content={
-            "completed": False,
-            "current_scene": current,
-            "total_scenes": total,
-            "scene": session["story"]["scenes"][current],
-        }
-    )
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to parse next scene: {str(e)}",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Scene generation failed: {str(e)}",
+        )
 
 
 @app.get("/api/session/{session_id}")
@@ -351,17 +488,19 @@ async def get_session(session_id: str) -> JSONResponse:
         content={
             "session_id": session_id,
             "current_scene": session["current_scene"],
-            "total_scenes": len(session["story"]["scenes"]),
-            "story": session["story"],
+            "total_scenes": session["total_scenes"],
+            "scenes": session["scenes"],
             "choices": session["choices"],
         }
     )
 
 
-# Serve frontend static files in production
+# --------------------------------------------------------------------------- #
+#  Static file serving (production)                                            #
+# --------------------------------------------------------------------------- #
+
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(static_dir):
-    from fastapi.staticfiles import StaticFiles
     from starlette.responses import FileResponse
 
     @app.get("/{full_path:path}")
@@ -372,7 +511,13 @@ if os.path.isdir(static_dir):
             return FileResponse(file_path)
         return FileResponse(os.path.join(static_dir, "index.html"))
 
-    app.mount("/assets", StaticFiles(directory=os.path.join(static_dir, "assets")), name="assets")
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount(
+        "/assets",
+        StaticFiles(directory=os.path.join(static_dir, "assets")),
+        name="assets",
+    )
 
 
 if __name__ == "__main__":

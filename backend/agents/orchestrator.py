@@ -1,15 +1,22 @@
 """Orchestrator Agent — Root agent that coordinates the StoryBridge pipeline.
 
-This is the main entry point for the ADK agent system. It delegates to
-sub-agents (Story Architect, Illustrator, Narrator) and manages the
-storytelling flow.
+This module defines the root ADK agent and documents the orchestration
+architecture. In the current implementation, the FastAPI server (server.py)
+acts as the orchestrator, coordinating:
+
+1. Story Architect (ADK Runner) — generates story content incrementally
+2. Illustrator (Gemini image gen) — creates watercolor illustrations
+3. Narrator (Gemini TTS) — produces bilingual audio narration
+
+The Story Architect runs through ADK's Runner with session state, enabling
+truly interactive storytelling where each child's choice shapes the next scene.
 """
 
 from google.adk import Agent
 
-from .story_architect import story_architect
 from .illustrator import illustrator
 from .narrator import narrator
+from .story_architect import story_architect
 
 ORCHESTRATOR_INSTRUCTIONS = """You are StoryBridge, an AI-powered bilingual family storytelling companion.
 
@@ -33,20 +40,18 @@ When the user first connects, warmly welcome them and ask:
 
 ### Step 2: Story Creation
 Once you have the seed:
-1. Ask **story_architect** to create the full story outline
-2. Present the story structure to the parent for approval
-3. For each scene:
-   a. Ask **illustrator** to generate the scene illustration
-   b. Ask **narrator** to create audio narration
-   c. Present the complete scene (text + image + audio) to the user
-   d. Wait for the child's response to the interactive prompt
-   e. Feed the child's choice into the next scene
+1. Ask **story_architect** to create the story outline + first scene
+2. Present the first scene (text + image + audio) to the user
+3. Wait for the child's response to the interactive prompt
+4. Feed the child's choice back to **story_architect** for the next scene
+5. For each new scene, ask **illustrator** and **narrator** to enrich it
+6. Repeat until the story is complete
 
 ### Step 3: Story Completion
 After the final scene:
 - Summarize the story journey
-- Offer to save or share the story
-- Suggest a follow-up story idea
+- Offer to create a new story
+- Celebrate the family's shared experience
 
 ## Important Rules:
 - ALWAYS maintain warmth and encouragement
@@ -55,11 +60,6 @@ After the final scene:
 - Keep the magic alive — treat the story as a shared family experience
 - If a child's response is unexpected, creatively incorporate it into the story
 - Each scene should feel complete with text, illustration, and narration
-
-## Personality:
-You are like a wise, warm storytelling aunt/uncle who knows stories from every culture.
-You celebrate diversity, make children feel special, and help families connect across
-language barriers through the universal magic of storytelling.
 """
 
 root_agent = Agent(
