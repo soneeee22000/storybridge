@@ -77,6 +77,49 @@ body {
   padding: var(--space-2xl) 0 var(--space-xl);
 }
 
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.header-logo-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: opacity 0.2s;
+}
+
+.header-logo-btn:hover {
+  opacity: 0.7;
+}
+
+.header-links {
+  position: absolute;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.header-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--color-deep-brown);
+  opacity: 0.4;
+  transition: opacity 0.2s;
+}
+
+.header-link:hover {
+  opacity: 0.8;
+}
+
 .app-title {
   font-family: var(--font-story);
   font-size: 2.5rem;
@@ -804,6 +847,35 @@ body {
   font-style: italic;
   color: var(--color-terracotta);
   opacity: 0.7;
+}
+
+.landing-footer-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
+.landing-footer-link {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-deep-brown);
+  opacity: 0.4;
+  text-decoration: none;
+  transition: opacity 0.2s;
+}
+
+.landing-footer-link:hover {
+  opacity: 0.8;
+}
+
+.landing-footer-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--color-sand);
 }
 
 /* Responsive */
