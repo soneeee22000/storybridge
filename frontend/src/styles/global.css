@@ -1215,6 +1215,138 @@ body {
   background: var(--color-sand);
 }
 
+/* ---- My Stories Library ---- */
+.my-stories-section {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--space-2xl) 0;
+}
+
+.my-stories-title {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-deep-brown);
+  margin-bottom: var(--space-lg);
+}
+
+.my-stories-shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-lg);
+}
+
+.my-stories-card {
+  position: relative;
+  background: var(--color-warm-white);
+  border: 1px solid var(--color-sand);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition:
+    transform 0.25s,
+    box-shadow 0.25s;
+}
+
+.my-stories-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-page);
+}
+
+.my-stories-card-btn {
+  display: block;
+  width: 100%;
+  padding: var(--space-xl);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.my-stories-card-title {
+  font-family: var(--font-story);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-deep-brown);
+  margin-bottom: var(--space-xs);
+}
+
+.my-stories-card-english {
+  font-family: var(--font-story);
+  font-size: 0.9rem;
+  font-style: italic;
+  color: var(--color-terracotta);
+  margin-bottom: var(--space-md);
+}
+
+.my-stories-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.my-stories-card-badge {
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-forest);
+  background: var(--color-parchment);
+  padding: 2px 8px;
+  border-radius: 100px;
+}
+
+.my-stories-card-scenes {
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  color: var(--color-deep-brown);
+  opacity: 0.5;
+}
+
+.my-stories-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-cream);
+  border: 1px solid var(--color-sand);
+  color: var(--color-deep-brown);
+  opacity: 0;
+  cursor: pointer;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.2s;
+}
+
+.my-stories-card:hover .my-stories-delete {
+  opacity: 0.5;
+}
+
+.my-stories-delete:hover {
+  opacity: 1 !important;
+  background: var(--color-soft-coral);
+  color: white;
+  border-color: var(--color-soft-coral);
+}
+
+/* Reading navigation */
+.reading-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-sand);
+}
+
+.reading-nav .btn-secondary:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .app-title {
@@ -1249,6 +1381,10 @@ body {
   .landing-hero::before,
   .landing-hero::after {
     display: none;
+  }
+
+  .my-stories-shelf {
+    grid-template-columns: 1fr;
   }
 
   .landing-stats {

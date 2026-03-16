@@ -6,7 +6,7 @@
  */
 
 import type { ReactNode } from "react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -31,7 +31,13 @@ interface Story {
   total_scenes: number;
 }
 
-type AppPhase = "landing" | "setup" | "loading" | "scene" | "complete";
+type AppPhase =
+  | "landing"
+  | "setup"
+  | "loading"
+  | "scene"
+  | "complete"
+  | "reading";
 
 const API_BASE = "/api";
 
@@ -126,6 +132,83 @@ async function submitChoice(
   });
   if (!res.ok) throw new Error(`Choice failed: ${res.statusText}`);
   return res.json();
+}
+
+/* ------------------------------------------------------------------ */
+/*  Browser ID + Story Library API                                     */
+/* ------------------------------------------------------------------ */
+
+function getBrowserId(): string {
+  const KEY = "storybridge_browser_id";
+  let id = localStorage.getItem(KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(KEY, id);
+  }
+  return id;
+}
+
+interface SavedStorySummary {
+  story_id: string;
+  story_title_native: string;
+  story_title_english: string;
+  parent_language: string;
+  story_theme: string;
+  total_scenes: number;
+  created_at: string;
+}
+
+interface SavedStoryFull extends SavedStorySummary {
+  scenes: Scene[];
+  choices: string[];
+  child_age: number;
+  cultural_elements: string;
+}
+
+async function saveStoryToLibrary(params: {
+  story: Story;
+  scenes: Scene[];
+  choices: string[];
+  parentLanguage: string;
+  childAge: number;
+  storyTheme: string;
+  culturalElements: string;
+}): Promise<void> {
+  await fetch(`${API_BASE}/stories/save`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      browser_id: getBrowserId(),
+      story_title_native: params.story.story_title_native,
+      story_title_english: params.story.story_title_english,
+      parent_language: params.parentLanguage,
+      child_age: params.childAge,
+      story_theme: params.storyTheme,
+      cultural_elements: params.culturalElements,
+      total_scenes: params.story.total_scenes,
+      scenes: params.scenes,
+      choices: params.choices,
+    }),
+  });
+}
+
+async function fetchSavedStories(): Promise<SavedStorySummary[]> {
+  const res = await fetch(
+    `${API_BASE}/stories/list?browser_id=${getBrowserId()}`,
+  );
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.stories || [];
+}
+
+async function fetchFullStory(storyId: string): Promise<SavedStoryFull | null> {
+  const res = await fetch(`${API_BASE}/stories/${storyId}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+async function deleteStoryFromLibrary(storyId: string): Promise<void> {
+  await fetch(`${API_BASE}/stories/${storyId}`, { method: "DELETE" });
 }
 
 /* ------------------------------------------------------------------ */
@@ -280,7 +363,141 @@ function Header({
   );
 }
 
-function LandingPage({ onStart }: { onStart: () => void }): ReactNode {
+function MyStories({
+  stories,
+  onRead,
+  onRefresh,
+}: {
+  stories: SavedStorySummary[];
+  onRead: (storyId: string) => void;
+  onRefresh: () => void;
+}): ReactNode {
+  if (stories.length === 0) return null;
+
+  const handleDelete = async (storyId: string): Promise<void> => {
+    await deleteStoryFromLibrary(storyId);
+    onRefresh();
+  };
+
+  return (
+    <section className="my-stories-section">
+      <h2 className="my-stories-title">My Stories ({stories.length})</h2>
+      <div className="my-stories-shelf">
+        {stories.map((s) => (
+          <div key={s.story_id} className="my-stories-card">
+            <button
+              className="my-stories-card-btn"
+              onClick={() => onRead(s.story_id)}
+              type="button"
+            >
+              <p className="my-stories-card-title">{s.story_title_native}</p>
+              <p className="my-stories-card-english">{s.story_title_english}</p>
+              <div className="my-stories-card-meta">
+                <span className="my-stories-card-badge">{s.story_theme}</span>
+                <span className="my-stories-card-badge">
+                  {s.parent_language}
+                </span>
+              </div>
+              <p className="my-stories-card-scenes">{s.total_scenes} scenes</p>
+            </button>
+            <button
+              className="my-stories-delete"
+              onClick={() => handleDelete(s.story_id)}
+              aria-label="Delete story"
+              type="button"
+            >
+              x
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ReadingView({
+  story,
+  sceneIndex,
+  onNext,
+  onPrev,
+  onClose,
+}: {
+  story: SavedStoryFull;
+  sceneIndex: number;
+  onNext: () => void;
+  onPrev: () => void;
+  onClose: () => void;
+}): ReactNode {
+  const scene = story.scenes[sceneIndex];
+  if (!scene) return null;
+  const isFirst = sceneIndex === 0;
+  const isLast = sceneIndex === story.scenes.length - 1;
+
+  return (
+    <div className="scene-container">
+      <div className="scene-page">
+        <div className="scene-content">
+          <div className="scene-header">
+            <span className="scene-number">
+              Scene {sceneIndex + 1} of {story.total_scenes}
+            </span>
+            <div className="scene-progress">
+              {Array.from({ length: story.total_scenes }, (_, i) => (
+                <div
+                  key={i}
+                  className={`progress-dot ${
+                    i < sceneIndex
+                      ? "completed"
+                      : i === sceneIndex
+                        ? "active"
+                        : ""
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+          <h2 className="scene-title">{scene.title_native}</h2>
+          <p className="scene-title-english">{scene.title_english}</p>
+          <div className="cultural-badge">{scene.cultural_element}</div>
+          <div className="narration-block">
+            <p className="narration-native">{scene.narration_native}</p>
+            <p className="narration-english">{scene.narration_english}</p>
+          </div>
+          <div className="reading-nav">
+            <button
+              className="btn-secondary"
+              onClick={onPrev}
+              disabled={isFirst}
+            >
+              Previous
+            </button>
+            {isLast ? (
+              <button className="btn-primary landing-cta" onClick={onClose}>
+                Close
+              </button>
+            ) : (
+              <button className="btn-primary landing-cta" onClick={onNext}>
+                Next Scene
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LandingPage({
+  onStart,
+  savedStories,
+  onReadStory,
+  onRefreshStories,
+}: {
+  onStart: () => void;
+  savedStories: SavedStorySummary[];
+  onReadStory: (storyId: string) => void;
+  onRefreshStories: () => void;
+}): ReactNode {
   return (
     <div className="landing">
       {/* Hero */}
@@ -302,6 +519,12 @@ function LandingPage({ onStart }: { onStart: () => void }): ReactNode {
           Create Your Story
         </button>
       </section>
+
+      <MyStories
+        stories={savedStories}
+        onRead={onReadStory}
+        onRefresh={onRefreshStories}
+      />
 
       {/* Problem */}
       <section className="landing-section">
@@ -949,6 +1172,16 @@ export function App(): ReactNode {
   const [isLoadingImage, setIsLoadingImage] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
+  const [savedStories, setSavedStories] = useState<SavedStorySummary[]>([]);
+  const [readingStory, setReadingStory] = useState<SavedStoryFull | null>(null);
+  const [readingSceneIndex, setReadingSceneIndex] = useState(0);
+
+  const storySetupRef = useRef<{
+    parentLanguage: string;
+    childAge: number;
+    storyTheme: string;
+    culturalElements: string;
+  } | null>(null);
 
   // Generation counter to prevent stale media from overwriting current scene
   const mediaGenRef = useRef(0);
@@ -1008,6 +1241,12 @@ export function App(): ReactNode {
     }): Promise<void> => {
       setPhase("loading");
       setLoadingMessage("Weaving your story across languages...");
+      storySetupRef.current = {
+        parentLanguage: data.parent_language,
+        childAge: data.child_age,
+        storyTheme: data.story_theme,
+        culturalElements: data.cultural_elements,
+      };
 
       try {
         const result = await createStory(data);
@@ -1081,6 +1320,33 @@ export function App(): ReactNode {
     [sessionId, story, loadSceneMedia],
   );
 
+  const loadSavedStories = useCallback(async (): Promise<void> => {
+    try {
+      const stories = await fetchSavedStories();
+      setSavedStories(stories);
+    } catch {
+      console.error("Failed to load saved stories");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (phase === "landing") {
+      loadSavedStories();
+    }
+  }, [phase, loadSavedStories]);
+
+  const handleReadStory = useCallback(
+    async (storyId: string): Promise<void> => {
+      const full = await fetchFullStory(storyId);
+      if (full) {
+        setReadingStory(full);
+        setReadingSceneIndex(0);
+        setPhase("reading");
+      }
+    },
+    [],
+  );
+
   const resetStoryState = (): void => {
     setSessionId(null);
     setStory(null);
@@ -1106,7 +1372,14 @@ export function App(): ReactNode {
     <div className="app-container">
       <Header minimal={phase === "landing"} onLogoClick={handleGoHome} />
 
-      {phase === "landing" && <LandingPage onStart={() => setPhase("setup")} />}
+      {phase === "landing" && (
+        <LandingPage
+          onStart={() => setPhase("setup")}
+          savedStories={savedStories}
+          onReadStory={handleReadStory}
+          onRefreshStories={loadSavedStories}
+        />
+      )}
 
       {phase === "setup" && <SetupForm onSubmit={handleStartStory} />}
 
@@ -1124,7 +1397,34 @@ export function App(): ReactNode {
           isGenerating={isGeneratingScene}
           isFinalScene={isStoryComplete}
           onChoice={handleChoice}
-          onFinish={() => setPhase("complete")}
+          onFinish={() => {
+            if (story && storySetupRef.current) {
+              saveStoryToLibrary({
+                story,
+                scenes: story.scenes,
+                choices: [],
+                parentLanguage: storySetupRef.current.parentLanguage,
+                childAge: storySetupRef.current.childAge,
+                storyTheme: storySetupRef.current.storyTheme,
+                culturalElements: storySetupRef.current.culturalElements,
+              }).catch((err) => console.error("Failed to save story:", err));
+            }
+            setPhase("complete");
+          }}
+        />
+      )}
+
+      {phase === "reading" && readingStory && (
+        <ReadingView
+          story={readingStory}
+          sceneIndex={readingSceneIndex}
+          onNext={() => setReadingSceneIndex((i) => i + 1)}
+          onPrev={() => setReadingSceneIndex((i) => Math.max(0, i - 1))}
+          onClose={() => {
+            setReadingStory(null);
+            setReadingSceneIndex(0);
+            setPhase("landing");
+          }}
         />
       )}
 

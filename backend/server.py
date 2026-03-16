@@ -11,6 +11,7 @@ enabling truly interactive storytelling where children's choices shape the narra
 
 import asyncio
 import base64
+import datetime
 import json
 import logging
 import os
@@ -28,6 +29,7 @@ from google import genai
 from google.adk import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
+from google.cloud import firestore as firestore_client
 from pydantic import BaseModel
 
 from agents.illustrator import illustrator as illustrator_agent
@@ -68,6 +70,10 @@ story_runner = Runner(
 
 # Local session metadata (supplements ADK session state)
 sessions: dict[str, dict[str, Any]] = {}
+
+# Firestore for story persistence
+db = firestore_client.Client(project=os.getenv("GOOGLE_CLOUD_PROJECT", "storybridge-hackathon"))
+STORIES_COLLECTION = "stories"
 
 
 # --------------------------------------------------------------------------- #
@@ -511,6 +517,90 @@ async def get_session(session_id: str) -> JSONResponse:
             "choices": session["choices"],
         }
     )
+
+
+# --------------------------------------------------------------------------- #
+#  Firestore — My Stories library                                              #
+# --------------------------------------------------------------------------- #
+
+
+class SaveStoryRequest(BaseModel):
+    """Request to save a completed story."""
+
+    browser_id: str
+    story_title_native: str
+    story_title_english: str
+    parent_language: str
+    child_age: int
+    story_theme: str
+    cultural_elements: str
+    total_scenes: int
+    scenes: list[dict[str, Any]]
+    choices: list[str]
+
+
+@app.post("/api/stories/save")
+async def save_story(request: SaveStoryRequest) -> JSONResponse:
+    """Save a completed story to Firestore."""
+    story_id = str(uuid.uuid4())
+    doc = {
+        "story_id": story_id,
+        "browser_id": request.browser_id,
+        "story_title_native": request.story_title_native,
+        "story_title_english": request.story_title_english,
+        "parent_language": request.parent_language,
+        "child_age": request.child_age,
+        "story_theme": request.story_theme,
+        "cultural_elements": request.cultural_elements,
+        "total_scenes": request.total_scenes,
+        "scenes": request.scenes,
+        "choices": request.choices,
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    db.collection(STORIES_COLLECTION).document(story_id).set(doc)
+    return JSONResponse(content={"story_id": story_id, "message": "Story saved"})
+
+
+@app.get("/api/stories/list")
+async def list_stories(browser_id: str) -> JSONResponse:
+    """List all saved stories for a browser."""
+    docs = (
+        db.collection(STORIES_COLLECTION)
+        .where("browser_id", "==", browser_id)
+        .order_by("created_at", direction=firestore_client.Query.DESCENDING)
+        .limit(20)
+        .stream()
+    )
+    stories = []
+    for doc in docs:
+        d = doc.to_dict()
+        # Return summary only (no full scenes) for the list view
+        stories.append({
+            "story_id": d["story_id"],
+            "story_title_native": d["story_title_native"],
+            "story_title_english": d["story_title_english"],
+            "parent_language": d["parent_language"],
+            "story_theme": d["story_theme"],
+            "total_scenes": d["total_scenes"],
+            "created_at": d["created_at"],
+        })
+    return JSONResponse(content={"stories": stories})
+
+
+@app.get("/api/stories/{story_id}")
+async def get_story(story_id: str) -> JSONResponse:
+    """Get a full saved story by ID."""
+    doc = db.collection(STORIES_COLLECTION).document(story_id).get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Story not found")
+    return JSONResponse(content=doc.to_dict())
+
+
+@app.delete("/api/stories/{story_id}")
+async def delete_story(story_id: str) -> JSONResponse:
+    """Delete a saved story."""
+    db.collection(STORIES_COLLECTION).document(story_id).delete()
+    return JSONResponse(content={"message": "Story deleted"})
 
 
 # --------------------------------------------------------------------------- #
