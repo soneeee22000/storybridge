@@ -313,6 +313,19 @@ async def illustrate_scene(
         )
 
 
+def _generate_tts(prompt: str) -> bytes | None:
+    """Generate TTS audio and return raw PCM bytes, or None on failure."""
+    response = gemini_client.models.generate_content(
+        model=narrator_agent.model,
+        contents=prompt,
+        config=narrator_agent.generate_content_config,
+    )
+    for part in response.candidates[0].content.parts:
+        if part.inline_data and part.inline_data.mime_type.startswith("audio/"):
+            return part.inline_data.data
+    return None
+
+
 @app.post("/api/scene/narrate")
 async def narrate_scene(
     session_id: str,
@@ -320,9 +333,10 @@ async def narrate_scene(
 ) -> JSONResponse:
     """Generate audio narration using the Narrator agent's configuration.
 
-    Uses the Narrator agent's model (gemini-2.5-flash-preview-tts) and voice
-    config to produce warm bilingual audio narration. Retries up to 3 times
-    on transient failures (rate limits, API errors).
+    Splits narration into separate TTS calls per language to avoid
+    audio corruption when the model handles long bilingual content
+    in a single generation. Each language gets its own call, then
+    the raw PCM is concatenated and wrapped as WAV.
     """
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -334,49 +348,53 @@ async def narrate_scene(
         raise HTTPException(status_code=400, detail="Invalid scene index")
 
     scene = scenes[scene_index]
+    parent_lang = session["parent_language"]
 
-    prompt = (
-        f"Read this children's story scene aloud in a warm, gentle "
-        f"storytelling voice, like a loving parent reading a bedtime story.\n\n"
-        f"First, read in {session['parent_language']}:\n"
-        f"{scene['narration_native']}\n\n"
-        f"Then, read in English:\n"
-        f"{scene['narration_english']}\n\n"
+    # Build separate prompts for each language
+    native_prompt = (
+        f"Read this children's story text aloud in {parent_lang} in a warm, "
+        f"gentle storytelling voice, like a loving parent reading a bedtime story. "
+        f"Be expressive and warm.\n\n"
+        f"{scene['narration_native']}"
     )
-
-    # Add interactive prompts if present (not on final scene)
     if scene.get("interactive_prompt_native"):
-        prompt += (
-            f"Then ask the interactive question in both languages:\n"
-            f"{scene['interactive_prompt_native']}\n"
-            f"{scene['interactive_prompt_english']}\n\n"
-        )
+        native_prompt += f"\n\n{scene['interactive_prompt_native']}"
 
-    prompt += "Keep a brief pause between language switches. Be expressive and warm."
+    english_prompt = (
+        f"Read this children's story text aloud in English in a warm, "
+        f"gentle storytelling voice, like a loving parent reading a bedtime story. "
+        f"Be expressive and warm.\n\n"
+        f"{scene['narration_english']}"
+    )
+    if scene.get("interactive_prompt_english"):
+        english_prompt += f"\n\n{scene['interactive_prompt_english']}"
 
     max_retries = 3
     last_error: Exception | None = None
 
     for attempt in range(max_retries):
         try:
-            # Call Gemini using the Narrator agent's model and config
-            response = gemini_client.models.generate_content(
-                model=narrator_agent.model,
-                contents=prompt,
-                config=narrator_agent.generate_content_config,
+            # Generate both languages in parallel
+            native_pcm, english_pcm = await asyncio.gather(
+                asyncio.to_thread(_generate_tts, native_prompt),
+                asyncio.to_thread(_generate_tts, english_prompt),
             )
 
-            # Extract audio from response and wrap as WAV
-            audio_data = None
-            for part in response.candidates[0].content.parts:
-                if part.inline_data and part.inline_data.mime_type.startswith("audio/"):
-                    # Gemini TTS returns raw PCM (L16, 24kHz) — wrap with WAV header
-                    raw_pcm = part.inline_data.data
-                    wav_bytes = _wrap_pcm_as_wav(raw_pcm, sample_rate=24000)
-                    audio_data = base64.b64encode(wav_bytes).decode("utf-8")
-                    break
+            if native_pcm or english_pcm:
+                # Concatenate available audio (add 0.5s silence between)
+                silence = b"\x00\x00" * 12000  # 0.5s at 24kHz 16-bit mono
+                pcm_parts: list[bytes] = []
+                if native_pcm:
+                    pcm_parts.append(native_pcm)
+                if native_pcm and english_pcm:
+                    pcm_parts.append(silence)
+                if english_pcm:
+                    pcm_parts.append(english_pcm)
 
-            if audio_data:
+                combined_pcm = b"".join(pcm_parts)
+                wav_bytes = _wrap_pcm_as_wav(combined_pcm, sample_rate=24000)
+                audio_data = base64.b64encode(wav_bytes).decode("utf-8")
+
                 return JSONResponse(
                     content={
                         "scene_index": scene_index,
