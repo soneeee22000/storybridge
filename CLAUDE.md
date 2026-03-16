@@ -116,9 +116,14 @@ GCLOUD="C:/Users/pyaes/AppData/Local/Google/Cloud SDK/google-cloud-sdk/bin/gclou
 - [x] **ALL 3 agents through ADK Runner** — Story Architect, Illustrator, Narrator all run via ADK Runner
 - [x] **Native interleaved output** — Illustrator produces TEXT + IMAGE in single ADK generation
 - [x] **Voice input** — Web Speech API for children's choices (mic button with pulse animation)
+- [x] **Root orchestrator agent** — root_agent with sub_agents now runs as primary orchestrator_runner (no dead code)
+- [x] **SSE streaming endpoint** — /api/story/create/stream streams word-by-word for fluid output
+- [x] **Frontend streaming consumer** — Loading screen shows progressive text preview during generation
 - [x] **Demo script fixed** — "70 languages" corrected to "20+"
-- [x] **Redeploying to Cloud Run** — All technical upgrades deploying
-- [ ] Record demo video with voiceover and upload to YouTube
+- [x] **Firestore persistence** — My Stories library with save/load/delete via Google Cloud Firestore
+- [x] **Deployed to Cloud Run** — Revision storybridge-00016-554 + storybridge-00017 with all upgrades
+- [x] **Demo video component** — Animated JSX walkthrough at demo-video/storybridge-demo.jsx
+- [ ] Record demo video of REAL app and upload to YouTube
 - [ ] Take GCP deployment screenshot for submission
 - [ ] Complete Devpost form (project details, additional info) and submit
 

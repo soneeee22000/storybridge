@@ -131,7 +131,11 @@ flowchart TB
 
 ### Why This Architecture
 
+**Root Orchestrator with Sub-Agent Delegation** — The `root_agent` (with `sub_agents=[story_architect, illustrator, narrator]`) runs as the primary ADK Runner. Story generation flows through the Orchestrator's coordination logic, which delegates to the Story Architect sub-agent. This is true multi-agent orchestration through ADK, not a wrapper.
+
 **All 3 Agents via ADK Runner** — Every agent runs through Google ADK's `Runner`. The Story Architect uses `InMemorySessionService` to maintain conversation state across scenes — each child's choice is sent to the **same agent session**, producing genuinely adaptive narratives. The Illustrator and Narrator each get per-request ADK sessions for stateless multimodal generation.
+
+**SSE Streaming (Fluid Output)** — The `/api/story/create/stream` endpoint streams story generation word-by-word via Server-Sent Events. Text appears progressively in the loading screen as the Orchestrator agent generates through ADK Runner — demonstrating Gemini's real-time creative output.
 
 **Native Interleaved Output** — The Illustrator agent produces TEXT + IMAGE in a single ADK Runner generation, using Gemini's native interleaved multimodal output — a core Creative Storyteller capability. The Narrator agent produces native AUDIO output through ADK Runner.
 
@@ -141,18 +145,19 @@ flowchart TB
 
 ### API Endpoints
 
-| Endpoint                | Method | Purpose                                                                 |
-| ----------------------- | ------ | ----------------------------------------------------------------------- |
-| `/health`               | GET    | Health check                                                            |
-| `/api/story/create`     | POST   | Create story outline + first scene via ADK Story Architect              |
-| `/api/scene/illustrate` | POST   | Generate watercolor illustration using Illustrator agent config         |
-| `/api/scene/narrate`    | POST   | Generate bilingual audio (split per language for clean output)          |
-| `/api/scene/choice`     | POST   | Submit child's choice, generate next scene via ADK agent (same session) |
-| `/api/session/{id}`     | GET    | Retrieve full session state                                             |
-| `/api/stories/save`     | POST   | Save completed story to Firestore                                       |
-| `/api/stories/list`     | GET    | List saved stories by browser ID (newest first, max 20)                 |
-| `/api/stories/{id}`     | GET    | Get full saved story for re-reading                                     |
-| `/api/stories/{id}`     | DELETE | Delete a saved story                                                    |
+| Endpoint                   | Method | Purpose                                                                 |
+| -------------------------- | ------ | ----------------------------------------------------------------------- |
+| `/health`                  | GET    | Health check                                                            |
+| `/api/story/create`        | POST   | Create story outline + first scene via ADK Orchestrator agent           |
+| `/api/story/create/stream` | POST   | SSE streaming version — word-by-word fluid output via ADK Runner        |
+| `/api/scene/illustrate`    | POST   | Generate watercolor illustration using Illustrator agent config         |
+| `/api/scene/narrate`       | POST   | Generate bilingual audio (split per language for clean output)          |
+| `/api/scene/choice`        | POST   | Submit child's choice, generate next scene via ADK agent (same session) |
+| `/api/session/{id}`        | GET    | Retrieve full session state                                             |
+| `/api/stories/save`        | POST   | Save completed story to Firestore                                       |
+| `/api/stories/list`        | GET    | List saved stories by browser ID (newest first, max 20)                 |
+| `/api/stories/{id}`        | GET    | Get full saved story for re-reading                                     |
+| `/api/stories/{id}`        | DELETE | Delete a saved story                                                    |
 
 ---
 
@@ -368,7 +373,9 @@ timeline
 
 ### What Makes This a Strong Submission
 
+- **Root Orchestrator with sub-agent delegation** — `root_agent` coordinates `story_architect`, `illustrator`, `narrator` sub-agents through ADK Runner
 - **All 3 agents through ADK Runner** — Story Architect (session state), Illustrator (interleaved TEXT+IMAGE), Narrator (native AUDIO)
+- **SSE streaming for fluid output** — Story text streams word-by-word via Server-Sent Events as the agent generates
 - **Native interleaved multimodal output** — Illustrator produces text + image in a single ADK generation
 - **Three Gemini modalities** used meaningfully — text generation, image generation, and TTS
 - **Voice input** — children speak their choices via Web Speech API (beyond the text box)
