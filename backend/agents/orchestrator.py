@@ -1,15 +1,14 @@
 """Orchestrator Agent — Root agent that coordinates the StoryBridge pipeline.
 
-This module defines the root ADK agent and documents the orchestration
-architecture. In the current implementation, the FastAPI server (server.py)
-acts as the orchestrator, coordinating:
+This module defines the root ADK agent that orchestrates the multi-agent
+storytelling system. The root agent delegates to three specialist sub-agents:
 
-1. Story Architect (ADK Runner) — generates story content incrementally
-2. Illustrator (Gemini image gen) — creates watercolor illustrations
-3. Narrator (Gemini TTS) — produces bilingual audio narration
+1. Story Architect (ADK Runner + session state) — generates story content incrementally
+2. Illustrator (ADK Runner + native interleaved TEXT+IMAGE) — watercolor illustrations
+3. Narrator (ADK Runner + native AUDIO output) — bilingual TTS narration
 
-The Story Architect runs through ADK's Runner with session state, enabling
-truly interactive storytelling where each child's choice shapes the next scene.
+The server.py Runner wraps this root_agent, routing all story generation
+through the orchestrator's coordination logic with ADK session state.
 """
 
 from google.adk import Agent

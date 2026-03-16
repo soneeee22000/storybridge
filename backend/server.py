@@ -26,7 +26,7 @@ logger = logging.getLogger("storybridge")
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from google import genai
 from google.adk import Runner
 from google.adk.sessions import InMemorySessionService
@@ -36,6 +36,7 @@ from pydantic import BaseModel
 
 from agents.illustrator import illustrator as illustrator_agent
 from agents.narrator import narrator as narrator_agent
+from agents.orchestrator import root_agent
 from agents.story_architect import story_architect
 
 load_dotenv()
@@ -65,9 +66,11 @@ gemini_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 ADK_APP_NAME = "storybridge"
 session_service = InMemorySessionService()
 
-# Story Architect Runner (maintains conversation state across scenes)
-story_runner = Runner(
-    agent=story_architect,
+# Orchestrator Runner — root agent coordinates all sub-agents via ADK delegation
+# root_agent has sub_agents=[story_architect, illustrator, narrator]
+# Story generation flows through orchestrator -> story_architect delegation
+orchestrator_runner = Runner(
+    agent=root_agent,
     session_service=session_service,
     app_name=ADK_APP_NAME,
 )
@@ -122,14 +125,15 @@ class SceneChoiceRequest(BaseModel):
 
 
 def _run_story_agent(user_id: str, session_id: str, message: str) -> str:
-    """Send a message to the Story Architect agent and collect the text response.
+    """Send a message through the Orchestrator agent and collect the text response.
 
-    Uses the ADK Runner which maintains full conversation history in the
-    session, so the agent has context of the entire story when generating
+    Uses the root Orchestrator's ADK Runner which delegates to the Story
+    Architect sub-agent. The Runner maintains full conversation history in
+    the session, so the agent has context of the entire story when generating
     subsequent scenes.
     """
     response_text = ""
-    for event in story_runner.run(
+    for event in orchestrator_runner.run(
         user_id=user_id,
         session_id=session_id,
         new_message=types.Content(
@@ -313,6 +317,88 @@ async def create_story(request: StoryRequest) -> JSONResponse:
             status_code=500,
             detail=f"Story generation failed: {str(e)}",
         )
+
+
+@app.post("/api/story/create/stream")
+async def create_story_stream(request: StoryRequest) -> StreamingResponse:
+    """Create a new story with SSE streaming — fluid output stream.
+
+    Streams the story generation word-by-word via Server-Sent Events,
+    giving the user a real-time "live" experience as the Orchestrator
+    agent generates bilingual content through ADK Runner.
+    """
+    session_id = str(uuid.uuid4())
+    user_id = f"user-{session_id}"
+
+    async def event_stream():
+        """SSE generator — yields story tokens then final JSON."""
+        try:
+            await session_service.create_session(
+                app_name=ADK_APP_NAME,
+                user_id=user_id,
+                session_id=session_id,
+            )
+
+            prompt = (
+                f"Create a bilingual children's story with these parameters:\n"
+                f"- Parent's language: {request.parent_language}\n"
+                f"- Child's age: {request.child_age}\n"
+                f"- Theme: {request.story_theme}\n"
+                f"- Cultural elements: {request.cultural_elements or 'traditional elements'}\n"
+                f"- Story seed: {request.story_seed or request.story_theme}\n\n"
+                f"Generate the story outline and the complete first scene."
+            )
+
+            # Run orchestrator agent and collect response
+            response_text = await asyncio.to_thread(
+                _run_story_agent, user_id, session_id, prompt,
+            )
+
+            # Stream the response word-by-word for fluid output feel
+            words = response_text.split()
+            for i, word in enumerate(words):
+                yield f"data: {json.dumps({'token': word + ' ', 'progress': i / len(words)})}\n\n"
+                await asyncio.sleep(0.02)  # 20ms per word — natural reading pace
+
+            # Parse final JSON and build story response
+            story_data = _parse_json_response(response_text)
+            first_scene = story_data.get("scene", story_data.get("scenes", [{}])[0])
+            total_scenes = story_data.get("total_scenes", 5)
+
+            story_response = {
+                "story_title_native": story_data.get("story_title_native", ""),
+                "story_title_english": story_data.get("story_title_english", ""),
+                "scenes": [first_scene],
+                "total_scenes": total_scenes,
+            }
+
+            # Store session metadata
+            sessions[session_id] = {
+                "user_id": user_id,
+                "parent_language": request.parent_language,
+                "child_age": request.child_age,
+                "story_data": story_data,
+                "scenes": [first_scene],
+                "current_scene": 0,
+                "choices": [],
+                "total_scenes": total_scenes,
+            }
+
+            # Final event with complete story data
+            yield f"data: {json.dumps({'done': True, 'session_id': session_id, 'story': story_response})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/api/scene/illustrate")
