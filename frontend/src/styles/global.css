@@ -90,6 +90,9 @@ body {
   cursor: pointer;
   padding: 0;
   transition: opacity 0.2s;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
 }
 
 .header-logo-btn:hover {
@@ -701,6 +704,14 @@ body {
   bottom: -40px;
   left: -100px;
   animation: float 10s ease-in-out infinite;
+}
+
+.landing-hero-logo {
+  margin-bottom: var(--space-lg);
+}
+
+.landing-hero-logo .logo-mark {
+  filter: drop-shadow(0 2px 8px rgba(198, 122, 74, 0.2));
 }
 
 .landing-hero-title {
