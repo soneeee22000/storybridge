@@ -601,6 +601,7 @@ function SceneView({
   audioBase64,
   isLoadingImage,
   isLoadingAudio,
+  isGenerating,
   onChoice,
 }: {
   scene: Scene;
@@ -610,6 +611,7 @@ function SceneView({
   audioBase64: string | null;
   isLoadingImage: boolean;
   isLoadingAudio: boolean;
+  isGenerating: boolean;
   onChoice: (choice: string) => void;
 }): ReactNode {
   const [choice, setChoice] = useState("");
@@ -640,6 +642,14 @@ function SceneView({
   return (
     <div className="scene-container">
       <div className="scene-page">
+        {/* Generating overlay — shown while next scene text is loading */}
+        {isGenerating && (
+          <div className="scene-generating-overlay">
+            <div className="loading-spinner" />
+            <p className="loading-text">The story adapts to your choice...</p>
+          </div>
+        )}
+
         {/* Illustration */}
         {isLoadingImage ? (
           <div className="scene-illustration-placeholder">
@@ -738,11 +748,12 @@ function SceneView({
                   value={choice}
                   onChange={(e) => setChoice(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleChoice()}
+                  disabled={isGenerating}
                 />
                 <button
                   className="btn-choice"
                   onClick={handleChoice}
-                  disabled={!choice.trim()}
+                  disabled={!choice.trim() || isGenerating}
                 >
                   Continue
                 </button>
@@ -869,21 +880,19 @@ export function App(): ReactNode {
     [loadSceneMedia],
   );
 
+  const [isGeneratingScene, setIsGeneratingScene] = useState(false);
+
   const handleChoice = useCallback(
     async (choice: string): Promise<void> => {
       if (!sessionId || !story) return;
 
-      setSceneImage(null);
-      setSceneAudio(null);
-      setIsLoadingImage(true);
-      setIsLoadingAudio(true);
-      setLoadingMessage("The story adapts to your choice...");
+      // Show overlay on current scene while generating — DON'T wipe media yet
+      setIsGeneratingScene(true);
 
       try {
         const result = await submitChoice(sessionId, choice);
 
         if (result.completed) {
-          // Add the final scene if returned
           if (result.scene) {
             setStory((prev) =>
               prev
@@ -891,14 +900,15 @@ export function App(): ReactNode {
                 : prev,
             );
             setCurrentScene(result.current_scene);
-            // Load media for the final scene before showing completion
+            // Now clear old media and load new
+            setIsGeneratingScene(false);
             await loadSceneMedia(sessionId, result.current_scene);
             setPhase("complete");
           } else {
+            setIsGeneratingScene(false);
             setPhase("complete");
           }
         } else if (result.scene) {
-          // Add the new scene generated from the child's choice
           const nextIndex = result.current_scene;
           setStory((prev) =>
             prev
@@ -906,10 +916,13 @@ export function App(): ReactNode {
               : prev,
           );
           setCurrentScene(nextIndex);
+          // Now clear old media and load new — text is already visible
+          setIsGeneratingScene(false);
           await loadSceneMedia(sessionId, nextIndex);
         }
       } catch (err) {
         console.error("Failed to submit choice:", err);
+        setIsGeneratingScene(false);
         setIsLoadingImage(false);
         setIsLoadingAudio(false);
       }
@@ -945,6 +958,7 @@ export function App(): ReactNode {
           audioBase64={sceneAudio}
           isLoadingImage={isLoadingImage}
           isLoadingAudio={isLoadingAudio}
+          isGenerating={isGeneratingScene}
           onChoice={handleChoice}
         />
       )}
