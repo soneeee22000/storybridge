@@ -358,7 +358,25 @@ async def get_session(session_id: str) -> JSONResponse:
     )
 
 
+# Serve frontend static files in production
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(static_dir):
+    from fastapi.staticfiles import StaticFiles
+    from starlette.responses import FileResponse
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str) -> FileResponse:
+        """Serve the React frontend SPA."""
+        file_path = os.path.join(static_dir, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(os.path.join(static_dir, "index.html"))
+
+    app.mount("/assets", StaticFiles(directory=os.path.join(static_dir, "assets")), name="assets")
+
+
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
