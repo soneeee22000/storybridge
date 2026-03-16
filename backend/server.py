@@ -1,12 +1,14 @@
 """StoryBridge FastAPI server — orchestrates the multi-agent storytelling pipeline.
 
-The server acts as the Orchestrator, coordinating three ADK agents:
-- Story Architect (ADK Runner) — generates bilingual story content incrementally
-- Illustrator (Gemini image gen) — creates watercolor storybook illustrations
-- Narrator (Gemini TTS) — produces bilingual audio narration
+All three ADK agents run through Google ADK's Runner:
+- Story Architect (ADK Runner + session state) — generates bilingual story content incrementally
+- Illustrator (ADK Runner + native interleaved TEXT+IMAGE output) — watercolor illustrations
+- Narrator (ADK Runner + native audio output) — bilingual TTS narration
 
-The Story Architect runs through Google ADK's Runner with session state,
-enabling truly interactive storytelling where children's choices shape the narrative.
+The Story Architect maintains conversation state across scenes, enabling truly
+interactive storytelling where children's choices shape the narrative. The Illustrator
+uses Gemini's native interleaved output to produce text and images in a single
+generation — a core Creative Storyteller capability.
 """
 
 import asyncio
@@ -59,11 +61,27 @@ app.add_middleware(
 # Gemini client for illustration & narration (multimodal agents)
 gemini_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
-# ADK Runner for the Story Architect agent (maintains conversation state)
+# ADK Runners for ALL agents — every agent runs through ADK Runner
 ADK_APP_NAME = "storybridge"
 session_service = InMemorySessionService()
+
+# Story Architect Runner (maintains conversation state across scenes)
 story_runner = Runner(
     agent=story_architect,
+    session_service=session_service,
+    app_name=ADK_APP_NAME,
+)
+
+# Illustrator Runner (native interleaved TEXT + IMAGE output via ADK)
+illustrator_runner = Runner(
+    agent=illustrator_agent,
+    session_service=session_service,
+    app_name=ADK_APP_NAME,
+)
+
+# Narrator Runner (native AUDIO output via ADK)
+narrator_runner = Runner(
+    agent=narrator_agent,
     session_service=session_service,
     app_name=ADK_APP_NAME,
 )
@@ -124,6 +142,49 @@ def _run_story_agent(user_id: str, session_id: str, message: str) -> str:
                 if hasattr(part, "text") and part.text:
                     response_text += part.text
     return response_text
+
+
+def _run_illustrator_agent(user_id: str, session_id: str, prompt: str) -> str | None:
+    """Run the Illustrator agent through ADK Runner with native interleaved output.
+
+    Produces TEXT + IMAGE in a single Gemini generation via ADK Runner,
+    demonstrating Gemini's native interleaved multimodal output capability.
+    """
+    image_data = None
+    for event in illustrator_runner.run(
+        user_id=user_id,
+        session_id=session_id,
+        new_message=types.Content(
+            parts=[types.Part(text=prompt)],
+            role="user",
+        ),
+    ):
+        if event.is_final_response() and event.content and event.content.parts:
+            for part in event.content.parts:
+                if part.inline_data and part.inline_data.mime_type.startswith("image/"):
+                    image_data = base64.b64encode(part.inline_data.data).decode("utf-8")
+    return image_data
+
+
+def _run_narrator_agent(user_id: str, session_id: str, prompt: str) -> bytes | None:
+    """Run the Narrator agent through ADK Runner for bilingual TTS.
+
+    Creates a per-request ADK session since narration is stateless.
+    Returns raw PCM audio bytes.
+    """
+    for event in narrator_runner.run(
+        user_id=user_id,
+        session_id=session_id,
+        new_message=types.Content(
+            parts=[types.Part(text=prompt)],
+            role="user",
+        ),
+    ):
+        if event.is_final_response() and event.content and event.content.parts:
+            for part in event.content.parts:
+                if part.inline_data and part.inline_data.mime_type.startswith("audio/"):
+                    return part.inline_data.data
+    return None
 
 
 def _wrap_pcm_as_wav(pcm_data: bytes, sample_rate: int = 24000, channels: int = 1, bits_per_sample: int = 16) -> bytes:
@@ -259,10 +320,11 @@ async def illustrate_scene(
     session_id: str,
     scene_index: int,
 ) -> JSONResponse:
-    """Generate an illustration using the Illustrator agent's configuration.
+    """Generate an illustration via the Illustrator ADK agent.
 
-    Uses the Illustrator agent's model (gemini-2.5-flash-image) and config
-    to generate warm watercolor storybook illustrations.
+    Runs the Illustrator agent through ADK Runner, which produces native
+    interleaved TEXT + IMAGE output in a single Gemini generation — a core
+    Creative Storyteller capability.
     """
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -276,25 +338,41 @@ async def illustrate_scene(
     scene = scenes[scene_index]
 
     try:
-        # Build prompt using the Illustrator agent's instruction context
+        # Build prompt for the Illustrator ADK agent
         prompt = (
             f"{illustrator_agent.instruction}\n\n"
             f"Scene to illustrate: {scene['image_prompt']}"
         )
 
-        # Call Gemini using the Illustrator agent's model and config
-        response = gemini_client.models.generate_content(
-            model=illustrator_agent.model,
-            contents=prompt,
-            config=illustrator_agent.generate_content_config,
+        # Create per-request ADK session for the Illustrator agent
+        illust_session_id = f"illust-{uuid.uuid4()}"
+        illust_user_id = "illustrator"
+        await session_service.create_session(
+            app_name=ADK_APP_NAME,
+            user_id=illust_user_id,
+            session_id=illust_session_id,
         )
 
-        # Extract image from response
-        image_data = None
-        for part in response.candidates[0].content.parts:
-            if part.inline_data and part.inline_data.mime_type.startswith("image/"):
-                image_data = base64.b64encode(part.inline_data.data).decode("utf-8")
-                break
+        # Run Illustrator through ADK Runner (native interleaved output)
+        image_data = await asyncio.to_thread(
+            _run_illustrator_agent,
+            illust_user_id,
+            illust_session_id,
+            prompt,
+        )
+
+        if not image_data:
+            # Fallback: direct Gemini API if ADK Runner didn't return image
+            logger.warning("Illustrator ADK Runner returned no image, falling back to direct API")
+            response = gemini_client.models.generate_content(
+                model=illustrator_agent.model,
+                contents=prompt,
+                config=illustrator_agent.generate_content_config,
+            )
+            for part in response.candidates[0].content.parts:
+                if part.inline_data and part.inline_data.mime_type.startswith("image/"):
+                    image_data = base64.b64encode(part.inline_data.data).decode("utf-8")
+                    break
 
         if not image_data:
             raise HTTPException(
@@ -320,7 +398,7 @@ async def illustrate_scene(
 
 
 def _generate_tts(prompt: str) -> bytes | None:
-    """Generate TTS audio and return raw PCM bytes, or None on failure."""
+    """Generate TTS audio via direct Gemini API (fallback)."""
     response = gemini_client.models.generate_content(
         model=narrator_agent.model,
         contents=prompt,
@@ -337,12 +415,11 @@ async def narrate_scene(
     session_id: str,
     scene_index: int,
 ) -> JSONResponse:
-    """Generate audio narration using the Narrator agent's configuration.
+    """Generate audio narration via the Narrator ADK agent.
 
-    Splits narration into separate TTS calls per language to avoid
-    audio corruption when the model handles long bilingual content
-    in a single generation. Each language gets its own call, then
-    the raw PCM is concatenated and wrapped as WAV.
+    Runs the Narrator agent through ADK Runner for each language,
+    producing native audio output. Each language gets its own ADK
+    session, and the raw PCM is concatenated and wrapped as WAV.
     """
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -380,11 +457,30 @@ async def narrate_scene(
 
     for attempt in range(max_retries):
         try:
-            # Generate both languages in parallel
-            native_pcm, english_pcm = await asyncio.gather(
-                asyncio.to_thread(_generate_tts, native_prompt),
-                asyncio.to_thread(_generate_tts, english_prompt),
+            # Create per-request ADK sessions for the Narrator agent
+            native_sid = f"narr-native-{uuid.uuid4()}"
+            english_sid = f"narr-english-{uuid.uuid4()}"
+            narr_uid = "narrator"
+            await session_service.create_session(
+                app_name=ADK_APP_NAME, user_id=narr_uid, session_id=native_sid,
             )
+            await session_service.create_session(
+                app_name=ADK_APP_NAME, user_id=narr_uid, session_id=english_sid,
+            )
+
+            # Run Narrator agent through ADK Runner for both languages in parallel
+            native_pcm, english_pcm = await asyncio.gather(
+                asyncio.to_thread(_run_narrator_agent, narr_uid, native_sid, native_prompt),
+                asyncio.to_thread(_run_narrator_agent, narr_uid, english_sid, english_prompt),
+            )
+
+            # Fallback to direct API if ADK Runner returned no audio
+            if not native_pcm and not english_pcm:
+                logger.warning("Narrator ADK Runner returned no audio, trying direct API fallback")
+                native_pcm, english_pcm = await asyncio.gather(
+                    asyncio.to_thread(_generate_tts, native_prompt),
+                    asyncio.to_thread(_generate_tts, english_prompt),
+                )
 
             if native_pcm or english_pcm:
                 # Concatenate available audio (add 0.5s silence between)
@@ -557,7 +653,11 @@ async def save_story(request: SaveStoryRequest) -> JSONResponse:
         "choices": request.choices,
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
-    db.collection(STORIES_COLLECTION).document(story_id).set(doc)
+    try:
+        db.collection(STORIES_COLLECTION).document(story_id).set(doc)
+    except Exception as e:
+        logger.error("Failed to save story: %s", str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to save story: {str(e)}")
     return JSONResponse(content={"story_id": story_id, "message": "Story saved"})
 
 
@@ -567,24 +667,23 @@ async def list_stories(browser_id: str) -> JSONResponse:
     docs = (
         db.collection(STORIES_COLLECTION)
         .where("browser_id", "==", browser_id)
-        .order_by("created_at", direction=firestore_client.Query.DESCENDING)
-        .limit(20)
         .stream()
     )
     stories = []
     for doc in docs:
         d = doc.to_dict()
-        # Return summary only (no full scenes) for the list view
         stories.append({
-            "story_id": d["story_id"],
-            "story_title_native": d["story_title_native"],
-            "story_title_english": d["story_title_english"],
-            "parent_language": d["parent_language"],
-            "story_theme": d["story_theme"],
-            "total_scenes": d["total_scenes"],
-            "created_at": d["created_at"],
+            "story_id": d.get("story_id", doc.id),
+            "story_title_native": d.get("story_title_native", ""),
+            "story_title_english": d.get("story_title_english", ""),
+            "parent_language": d.get("parent_language", ""),
+            "story_theme": d.get("story_theme", ""),
+            "total_scenes": d.get("total_scenes", 0),
+            "created_at": d.get("created_at", ""),
         })
-    return JSONResponse(content={"stories": stories})
+    # Sort newest first in Python (avoids Firestore composite index requirement)
+    stories.sort(key=lambda s: s["created_at"], reverse=True)
+    return JSONResponse(content={"stories": stories[:20]})
 
 
 @app.get("/api/stories/{story_id}")

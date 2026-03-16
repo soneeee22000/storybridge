@@ -3,10 +3,45 @@
  *
  * A bilingual family storytelling companion that creates interactive,
  * illustrated stories bridging languages and cultures.
+ *
+ * Features voice input via Web Speech API — moving "beyond the text box"
+ * for a more natural, immersive storytelling experience.
  */
 
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+
+/* Web Speech API type declarations for TypeScript strict mode */
+interface SpeechRecognitionEvent extends Event {
+  readonly results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionResultList {
+  readonly length: number;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  readonly length: number;
+  readonly isFinal: boolean;
+  [index: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionAlternative {
+  readonly transcript: string;
+  readonly confidence: number;
+}
+
+interface SpeechRecognitionInstance extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: Event) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -906,6 +941,76 @@ function LoadingScreen({ message }: { message: string }): ReactNode {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Voice Input — Web Speech API (beyond the text box)                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Custom hook for Web Speech API voice input.
+ * Enables children to speak their choices instead of typing — moving
+ * "beyond the text box" as the hackathon requires.
+ */
+function useVoiceInput(onTranscript: (text: string) => void): {
+  isListening: boolean;
+  isSupported: boolean;
+  startListening: () => void;
+  stopListening: () => void;
+} {
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const getRecognitionClass = ():
+    | (new () => SpeechRecognitionInstance)
+    | null => {
+    const w = window as any;
+    return w.SpeechRecognition || w.webkitSpeechRecognition || null;
+  };
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
+  const isSupported =
+    typeof window !== "undefined" && getRecognitionClass() !== null;
+
+  const startListening = useCallback((): void => {
+    const Ctor = getRecognitionClass();
+    if (!Ctor) return;
+
+    const recognition = new Ctor();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+
+    recognition.onresult = (event: SpeechRecognitionEvent): void => {
+      const transcript = event.results[0]?.[0]?.transcript;
+      if (transcript) {
+        onTranscript(transcript);
+      }
+      setIsListening(false);
+    };
+
+    recognition.onerror = (): void => {
+      setIsListening(false);
+    };
+
+    recognition.onend = (): void => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+  }, [onTranscript]);
+
+  const stopListening = useCallback((): void => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
+  }, []);
+
+  return { isListening, isSupported, startListening, stopListening };
+}
+
 function SceneView({
   scene,
   sceneIndex,
@@ -934,6 +1039,11 @@ function SceneView({
   const [choice, setChoice] = useState("");
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Voice input — "beyond the text box"
+  const voice = useVoiceInput(
+    useCallback((transcript: string) => setChoice(transcript), []),
+  );
 
   // Stop any playing audio and reset state when scene changes
   // This prevents stale audio from a previous scene playing on the new scene
@@ -1087,12 +1197,49 @@ function SceneView({
                 <input
                   className="choice-input"
                   type="text"
-                  placeholder="Type your answer..."
+                  placeholder={
+                    voice.isListening
+                      ? "Listening..."
+                      : voice.isSupported
+                        ? "Type or tap the mic to speak..."
+                        : "Type your answer..."
+                  }
                   value={choice}
                   onChange={(e) => setChoice(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleChoice()}
                   disabled={isGenerating}
                 />
+                {voice.isSupported && (
+                  <button
+                    className={`mic-btn${voice.isListening ? " listening" : ""}`}
+                    onClick={
+                      voice.isListening
+                        ? voice.stopListening
+                        : voice.startListening
+                    }
+                    disabled={isGenerating}
+                    aria-label={
+                      voice.isListening ? "Stop listening" : "Speak your choice"
+                    }
+                    type="button"
+                  >
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+                      <path d="M19 10v2a7 7 0 01-14 0v-2" />
+                      <line x1="12" y1="19" x2="12" y2="23" />
+                      <line x1="8" y1="23" x2="16" y2="23" />
+                    </svg>
+                  </button>
+                )}
                 <button
                   className="btn-choice"
                   onClick={handleChoice}

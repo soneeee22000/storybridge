@@ -477,6 +477,57 @@ body {
   background: #2d5a3d;
 }
 
+/* Voice Input — "Beyond the Text Box" */
+.mic-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--color-parchment);
+  color: var(--color-terracotta);
+  border: 2px solid var(--color-sand);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    transform 0.1s;
+}
+
+.mic-btn:hover {
+  background: var(--color-sand);
+  border-color: var(--color-terracotta);
+}
+
+.mic-btn:active {
+  transform: scale(0.95);
+}
+
+.mic-btn.listening {
+  background: var(--color-terracotta);
+  border-color: var(--color-terracotta);
+  color: white;
+  animation: micPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes micPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(198, 122, 74, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(198, 122, 74, 0);
+  }
+}
+
+.mic-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  animation: none;
+}
+
 /* Loading States */
 .loading-container {
   display: flex;
