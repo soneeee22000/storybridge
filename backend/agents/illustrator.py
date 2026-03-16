@@ -36,7 +36,7 @@ When you receive an image prompt, generate the illustration directly. Your respo
 
 illustrator = Agent(
     name="illustrator",
-    model="gemini-2.5-flash-preview-image-generation",
+    model="gemini-2.5-flash-image",
     description="Generates warm, culturally-rich storybook illustrations for each scene.",
     instruction=ILLUSTRATOR_INSTRUCTIONS,
     generate_content_config={

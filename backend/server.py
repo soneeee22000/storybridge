@@ -200,7 +200,7 @@ async def illustrate_scene(
         prompt = ILLUSTRATION_PROMPT.format(image_prompt=scene["image_prompt"])
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash-preview-image-generation",
+            model="gemini-2.5-flash-image",
             contents=prompt,
             config={
                 "response_modalities": ["TEXT", "IMAGE"],
