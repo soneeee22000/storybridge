@@ -210,25 +210,28 @@ async function saveStoryToLibrary(params: {
   childAge: number;
   storyTheme: string;
   culturalElements: string;
-  sceneImages: Record<number, string>;
-}): Promise<void> {
-  await fetch(`${API_BASE}/stories/save`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      browser_id: getBrowserId(),
-      story_title_native: params.story.story_title_native,
-      story_title_english: params.story.story_title_english,
-      parent_language: params.parentLanguage,
-      child_age: params.childAge,
-      story_theme: params.storyTheme,
-      cultural_elements: params.culturalElements,
-      total_scenes: params.story.total_scenes,
-      scenes: params.scenes,
-      choices: params.choices,
-      scene_images: params.sceneImages,
-    }),
-  });
+}): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/stories/save`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        browser_id: getBrowserId(),
+        story_title_native: params.story.story_title_native,
+        story_title_english: params.story.story_title_english,
+        parent_language: params.parentLanguage,
+        child_age: params.childAge,
+        story_theme: params.storyTheme,
+        cultural_elements: params.culturalElements,
+        total_scenes: params.story.total_scenes,
+        scenes: params.scenes,
+        choices: params.choices,
+      }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 async function fetchSavedStories(): Promise<SavedStorySummary[]> {
@@ -1362,11 +1365,15 @@ function SceneView({
 function StoryComplete({
   story,
   scenesCompleted,
+  saved,
   onRestart,
+  onViewLibrary,
 }: {
   story: Story;
   scenesCompleted: number;
+  saved: boolean;
   onRestart: () => void;
+  onViewLibrary: () => void;
 }): ReactNode {
   return (
     <div className="completion-container">
@@ -1381,14 +1388,27 @@ function StoryComplete({
         </span>
         <span className="completion-stat-divider" />
         <span className="completion-stat">2 languages bridged</span>
+        {saved && (
+          <>
+            <span className="completion-stat-divider" />
+            <span className="completion-stat">Saved to library</span>
+          </>
+        )}
       </div>
       <p className="completion-message">
         What a beautiful journey through story and language. Every story you
         share builds a bridge between worlds.
       </p>
-      <button className="btn-secondary" onClick={onRestart}>
-        Tell Another Story
-      </button>
+      <div className="completion-actions">
+        <button className="btn-primary landing-cta" onClick={onRestart}>
+          Tell Another Story
+        </button>
+        {saved && (
+          <button className="btn-secondary" onClick={onViewLibrary}>
+            View My Stories
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -1509,6 +1529,7 @@ export function App(): ReactNode {
 
   const [isGeneratingScene, setIsGeneratingScene] = useState(false);
   const [isStoryComplete, setIsStoryComplete] = useState(false);
+  const [storySaved, setStorySaved] = useState(false);
 
   const handleChoice = useCallback(
     async (choice: string): Promise<void> => {
@@ -1594,6 +1615,7 @@ export function App(): ReactNode {
     setSceneImage(null);
     setSceneAudio(null);
     setIsStoryComplete(false);
+    setStorySaved(false);
     sceneImagesRef.current = {};
   };
 
@@ -1640,9 +1662,10 @@ export function App(): ReactNode {
           isGenerating={isGeneratingScene}
           isFinalScene={isStoryComplete}
           onChoice={handleChoice}
-          onFinish={() => {
+          onFinish={async () => {
+            let saved = false;
             if (story && storySetupRef.current) {
-              saveStoryToLibrary({
+              saved = await saveStoryToLibrary({
                 story,
                 scenes: story.scenes,
                 choices: [],
@@ -1650,9 +1673,9 @@ export function App(): ReactNode {
                 childAge: storySetupRef.current.childAge,
                 storyTheme: storySetupRef.current.storyTheme,
                 culturalElements: storySetupRef.current.culturalElements,
-                sceneImages: { ...sceneImagesRef.current },
-              }).catch((err) => console.error("Failed to save story:", err));
+              });
             }
+            setStorySaved(saved);
             setPhase("complete");
           }}
         />
@@ -1686,7 +1709,12 @@ export function App(): ReactNode {
         <StoryComplete
           story={story}
           scenesCompleted={story.scenes.length}
+          saved={storySaved}
           onRestart={handleNewStory}
+          onViewLibrary={() => {
+            loadSavedStories();
+            setPhase("library");
+          }}
         />
       )}
     </div>

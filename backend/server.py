@@ -719,7 +719,7 @@ class SaveStoryRequest(BaseModel):
     total_scenes: int
     scenes: list[dict[str, Any]]
     choices: list[str]
-    scene_images: dict[str, str] = {}
+    scene_images: dict[str, str] = {}  # Optional — not sent for large stories
 
 
 @app.post("/api/stories/save")

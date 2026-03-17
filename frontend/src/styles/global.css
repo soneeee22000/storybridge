@@ -655,6 +655,13 @@ body {
   line-height: 1.6;
 }
 
+.completion-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  align-items: center;
+}
+
 .btn-secondary {
   padding: var(--space-md) var(--space-xl);
   background: transparent;
