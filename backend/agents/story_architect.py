@@ -34,6 +34,7 @@ When you receive a child's choice/response, you:
   "story_title_native": "title in parent's language",
   "story_title_english": "title in English",
   "total_scenes": 5,
+  "character_visual_bible": "Extremely detailed physical description of the main character for visual consistency across all illustrations. Include: species/gender, approximate age, hair color and style, skin tone, eye color and shape, clothing (exact colors, patterns, materials), accessories, distinguishing features, body proportions. Example: 'A 7-year-old Burmese girl with long straight black hair in two braids, warm brown skin, round dark brown eyes, wearing a bright yellow cotton longyi with pink floral patterns and a white short-sleeve blouse, small gold earrings, bare feet, carrying a woven bamboo basket.'",
   "outline": [
     {"scene_number": 1, "title": "brief title", "brief": "one-line description"},
     {"scene_number": 2, "title": "brief title", "brief": "one-line description"},
@@ -47,8 +48,13 @@ When you receive a child's choice/response, you:
     "title_english": "scene title in English",
     "narration_native": "2-3 sentences in parent's language",
     "narration_english": "2-3 sentences in English",
-    "image_prompt": "detailed visual description — warm watercolor storybook style, culturally authentic, child-friendly, 16:9 landscape",
+    "image_prompt": "detailed visual description — warm watercolor storybook style, culturally authentic, child-friendly, 16:9 landscape. ALWAYS include the full character description from the visual bible so the character looks consistent across scenes.",
     "cultural_element": "what cultural element is featured",
+    "cultural_context": "1-2 sentences explaining WHY this cultural element matters — its history, significance, or how families experience it. Written for a curious child.",
+    "vocabulary_words": [
+      {"native": "word in parent's language", "english": "English translation", "pronunciation": "phonetic pronunciation guide"},
+      {"native": "another word", "english": "translation", "pronunciation": "phonetic guide"}
+    ],
     "interactive_prompt_native": "question/choice for the child in parent's language",
     "interactive_prompt_english": "same question/choice in English"
   }
@@ -64,6 +70,8 @@ When you receive a child's choice/response, you:
     "narration_english": "...",
     "image_prompt": "...",
     "cultural_element": "...",
+    "cultural_context": "...",
+    "vocabulary_words": [{"native": "...", "english": "...", "pronunciation": "..."}],
     "interactive_prompt_native": "...",
     "interactive_prompt_english": "..."
   }

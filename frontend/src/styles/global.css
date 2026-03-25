@@ -383,7 +383,91 @@ body {
   border-radius: var(--radius-sm);
   font-size: 0.8rem;
   color: var(--color-forest);
-  margin-bottom: var(--space-lg);
+  margin-bottom: var(--space-md);
+}
+
+/* Cultural Context Card — "Did you know?" */
+.cultural-context-card {
+  background: var(--color-warm-white);
+  border-left: 3px solid var(--color-forest);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.cultural-context-label {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-forest);
+  margin-bottom: var(--space-xs);
+}
+
+.cultural-context-text {
+  font-family: var(--font-story);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--color-deep-brown);
+}
+
+/* Vocabulary Section — "Words to learn" */
+.vocabulary-section {
+  margin-bottom: var(--space-md);
+}
+
+.vocabulary-label {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-terracotta);
+  margin-bottom: var(--space-sm);
+}
+
+.vocabulary-words {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.vocabulary-word {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-parchment);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+  min-width: 120px;
+  transition: box-shadow 0.2s;
+}
+
+.vocabulary-word:hover {
+  box-shadow: var(--shadow-medium);
+}
+
+.vocab-native {
+  font-family: var(--font-story);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-deep-brown);
+}
+
+.vocab-pronunciation {
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-style: italic;
+  color: var(--color-terracotta);
+  margin: 2px 0;
+}
+
+.vocab-english {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--color-forest);
 }
 
 /* Audio Player */
@@ -1297,6 +1381,103 @@ body {
   background: var(--color-sand);
 }
 
+/* Landing — Hero actions */
+.landing-hero-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.landing-hero-note {
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  color: var(--color-deep-brown);
+  opacity: 0.4;
+}
+
+/* Landing — Social Proof badges */
+.landing-proof {
+  padding-top: 0;
+}
+
+.landing-proof-badges {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.landing-proof-badge {
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-forest);
+  background: var(--color-parchment);
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-xl);
+}
+
+/* Landing — Voice Companion highlight */
+.landing-voice-highlight {
+  background: var(--color-parchment);
+  border-radius: var(--radius-lg);
+  padding: var(--space-2xl);
+  margin: var(--space-xl) 0;
+}
+
+.landing-voice-content {
+  text-align: center;
+}
+
+.landing-voice-icon {
+  color: var(--color-terracotta);
+  margin-bottom: var(--space-md);
+}
+
+/* Landing — Waitlist */
+.landing-waitlist {
+  background: var(--color-warm-white);
+  border: 1px solid var(--color-sand);
+  border-radius: var(--radius-lg);
+  padding: var(--space-2xl);
+  margin: var(--space-xl) 0;
+  text-align: center;
+}
+
+.landing-waitlist-form {
+  display: flex;
+  gap: var(--space-sm);
+  max-width: 420px;
+  margin: var(--space-lg) auto 0;
+}
+
+.landing-waitlist-input {
+  flex: 1;
+  padding: var(--space-sm) var(--space-md);
+  border: 1.5px solid var(--color-sand);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+  color: var(--color-deep-brown);
+  background: var(--color-cream);
+}
+
+.landing-waitlist-input:focus {
+  outline: none;
+  border-color: var(--color-terracotta);
+}
+
+.landing-waitlist-success {
+  font-family: var(--font-story);
+  font-size: 1rem;
+  color: var(--color-forest);
+  font-weight: 600;
+  margin-top: var(--space-lg);
+}
+
 /* ---- Story Library Page ---- */
 .library-page {
   max-width: 960px;
@@ -1537,5 +1718,185 @@ body {
 
   .landing-final-cta .landing-section-title {
     font-size: 1.75rem;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Voice Companion — Gemini Live API                                   */
+/* ------------------------------------------------------------------ */
+
+.voice-companion-trigger {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--color-terracotta);
+  color: var(--color-warm-white);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-page);
+  z-index: 100;
+}
+
+.voice-companion-panel {
+  position: fixed;
+  bottom: 92px;
+  right: 24px;
+  width: 340px;
+  max-height: 480px;
+  background: var(--color-warm-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-page);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 99;
+  border: 1px solid var(--color-sand);
+}
+
+.voice-companion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-parchment);
+}
+
+.voice-companion-title {
+  font-family: var(--font-story);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-deep-brown);
+}
+
+.voice-companion-status {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--color-sand);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.voice-companion-status.connected {
+  color: var(--color-forest);
+}
+
+.voice-companion-transcripts {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-sm) var(--space-md);
+  min-height: 200px;
+  max-height: 320px;
+}
+
+.voice-companion-hint {
+  font-family: var(--font-story);
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--color-terracotta);
+  text-align: center;
+  margin-top: var(--space-lg);
+}
+
+.voice-transcript {
+  margin-bottom: var(--space-sm);
+}
+
+.voice-transcript.user {
+  text-align: right;
+}
+
+.voice-transcript.companion {
+  text-align: left;
+}
+
+.voice-transcript-speaker {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+
+.voice-transcript.user .voice-transcript-speaker {
+  color: var(--color-terracotta);
+}
+
+.voice-transcript.companion .voice-transcript-speaker {
+  color: var(--color-forest);
+}
+
+.voice-transcript-text {
+  display: inline-block;
+  font-family: var(--font-story);
+  font-size: 0.88rem;
+  line-height: 1.4;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  max-width: 85%;
+}
+
+.voice-transcript.user .voice-transcript-text {
+  background: var(--color-parchment);
+  color: var(--color-deep-brown);
+}
+
+.voice-transcript.companion .voice-transcript-text {
+  background: var(--color-forest);
+  color: var(--color-warm-white);
+}
+
+.voice-companion-controls {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-md);
+  border-top: 1px solid var(--color-parchment);
+}
+
+.voice-mic-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid var(--color-terracotta);
+  background: var(--color-warm-white);
+  color: var(--color-terracotta);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+
+.voice-mic-btn.active {
+  background: var(--color-terracotta);
+  color: var(--color-warm-white);
+}
+
+.voice-mic-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+  .voice-companion-panel {
+    right: 12px;
+    left: 12px;
+    width: auto;
+    bottom: 84px;
+  }
+
+  .voice-companion-trigger {
+    bottom: 16px;
+    right: 16px;
+    width: 48px;
+    height: 48px;
   }
 }

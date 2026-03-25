@@ -24,7 +24,7 @@ from typing import Any
 logger = logging.getLogger("storybridge")
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from google import genai
@@ -38,6 +38,7 @@ from agents.illustrator import illustrator as illustrator_agent
 from agents.narrator import narrator as narrator_agent
 from agents.orchestrator import root_agent
 from agents.story_architect import story_architect
+from live_session import handle_live_session
 
 load_dotenv()
 
@@ -288,7 +289,7 @@ async def create_story(request: StoryRequest) -> JSONResponse:
             "total_scenes": total_scenes,
         }
 
-        # Store session metadata
+        # Store session metadata (including visual bible for character consistency)
         sessions[session_id] = {
             "user_id": user_id,
             "parent_language": request.parent_language,
@@ -298,6 +299,8 @@ async def create_story(request: StoryRequest) -> JSONResponse:
             "current_scene": 0,
             "choices": [],
             "total_scenes": total_scenes,
+            "character_visual_bible": story_data.get("character_visual_bible", ""),
+            "scene1_image_base64": None,  # Set after first illustration
         }
 
         return JSONResponse(
@@ -372,7 +375,7 @@ async def create_story_stream(request: StoryRequest) -> StreamingResponse:
                 "total_scenes": total_scenes,
             }
 
-            # Store session metadata
+            # Store session metadata (including visual bible for character consistency)
             sessions[session_id] = {
                 "user_id": user_id,
                 "parent_language": request.parent_language,
@@ -382,6 +385,8 @@ async def create_story_stream(request: StoryRequest) -> StreamingResponse:
                 "current_scene": 0,
                 "choices": [],
                 "total_scenes": total_scenes,
+                "character_visual_bible": story_data.get("character_visual_bible", ""),
+                "scene1_image_base64": None,
             }
 
             # Final event with complete story data
@@ -424,9 +429,18 @@ async def illustrate_scene(
     scene = scenes[scene_index]
 
     try:
-        # Build prompt for the Illustrator ADK agent
+        # Build prompt with character visual bible for consistency
+        visual_bible = session.get("character_visual_bible", "")
+        bible_injection = ""
+        if visual_bible:
+            bible_injection = (
+                f"\n\n## CHARACTER VISUAL BIBLE (maintain exact appearance across all scenes):\n"
+                f"{visual_bible}\n"
+            )
+
         prompt = (
-            f"{illustrator_agent.instruction}\n\n"
+            f"{illustrator_agent.instruction}"
+            f"{bible_injection}\n\n"
             f"Scene to illustrate: {scene['image_prompt']}"
         )
 
@@ -465,6 +479,10 @@ async def illustrate_scene(
                 status_code=500,
                 detail="No image generated",
             )
+
+        # Store scene 1 image as reference for character consistency
+        if scene_index == 0 and session.get("scene1_image_base64") is None:
+            session["scene1_image_base64"] = image_data
 
         return JSONResponse(
             content={
@@ -788,6 +806,74 @@ async def delete_story(story_id: str) -> JSONResponse:
     """Delete a saved story."""
     db.collection(STORIES_COLLECTION).document(story_id).delete()
     return JSONResponse(content={"message": "Story deleted"})
+
+
+# --------------------------------------------------------------------------- #
+#  Gemini Live API — real-time voice companion                                 #
+# --------------------------------------------------------------------------- #
+
+
+@app.websocket("/ws/live")
+async def live_voice_companion(websocket: WebSocket) -> None:
+    """WebSocket endpoint for real-time voice interaction via Gemini Live API.
+
+    The frontend sends audio chunks (base64 PCM 16kHz) and receives audio
+    responses (base64 PCM 24kHz) + transcriptions in real-time.
+    """
+    await websocket.accept()
+
+    # Read initial config from first message
+    try:
+        init_msg = await websocket.receive_json()
+        parent_language = init_msg.get("parent_language", "")
+        story_context = init_msg.get("story_context", "")
+        session_id = init_msg.get("session_id", "")
+
+        # If there's an active story session, build context from it
+        if session_id and session_id in sessions:
+            session = sessions[session_id]
+            if not parent_language:
+                parent_language = session.get("parent_language", "")
+            if not story_context:
+                scene_idx = session.get("current_scene", 0)
+                scenes = session.get("scenes", [])
+                if scenes and scene_idx < len(scenes):
+                    current = scenes[scene_idx]
+                    story_context = (
+                        f"Current scene {scene_idx + 1}: {current.get('title_english', '')}\n"
+                        f"Narration: {current.get('narration_english', '')}\n"
+                        f"Cultural element: {current.get('cultural_element', '')}"
+                    )
+
+    except Exception:
+        parent_language = ""
+        story_context = ""
+
+    async def ws_send(msg: str) -> None:
+        await websocket.send_text(msg)
+
+    async def ws_receive() -> str | None:
+        try:
+            return await websocket.receive_text()
+        except WebSocketDisconnect:
+            return None
+
+    try:
+        await handle_live_session(
+            websocket_send=ws_send,
+            websocket_receive=ws_receive,
+            parent_language=parent_language,
+            story_context=story_context,
+        )
+    except WebSocketDisconnect:
+        logger.info("Live session WebSocket disconnected")
+    except Exception as e:
+        logger.error("Live session error: %s", e)
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 # --------------------------------------------------------------------------- #
